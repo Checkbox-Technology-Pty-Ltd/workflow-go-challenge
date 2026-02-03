@@ -13,7 +13,6 @@ import (
 	api "workflow-code-test/api/openapi"
 	"workflow-code-test/api/pkg/cache"
 	cachemocks "workflow-code-test/api/pkg/cache/mocks"
-	"workflow-code-test/api/pkg/db/mocks"
 	dbmocks "workflow-code-test/api/pkg/db/mocks"
 	"workflow-code-test/api/pkg/db/models"
 
@@ -518,7 +517,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 		requestBody interface{}
 
 		// Mock setup
-		setupMock func(mockDB *mocks.MockWorkFlowDB, mockCache *cachemocks.MockCache)
+		setupMock func(mockDB *dbmocks.MockWorkFlowDB, mockCache *cachemocks.MockCache)
 
 		// Expected response
 		expectedStatus int
@@ -537,7 +536,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 					Threshold: 20.0,
 				},
 			},
-			setupMock: func(mockDB *mocks.MockWorkFlowDB, mockCache *cachemocks.MockCache) {
+			setupMock: func(mockDB *dbmocks.MockWorkFlowDB, mockCache *cachemocks.MockCache) {
 				// Mock cache miss so it goes to database
 				cacheKey := "workflow:550e8400-e29b-41d4-a716-446655440000"
 				mockCache.EXPECT().
@@ -621,7 +620,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 		"invalid_request_body": {
 			workflowID:  "550e8400-e29b-41d4-a716-446655440000",
 			requestBody: "invalid json",
-			setupMock: func(mockDB *mocks.MockWorkFlowDB, mockCache *cachemocks.MockCache) {
+			setupMock: func(mockDB *dbmocks.MockWorkFlowDB, mockCache *cachemocks.MockCache) {
 				// No DB call expected for invalid request body
 			},
 			expectedStatus: http.StatusBadRequest,
@@ -640,7 +639,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 					"name": "John Doe",
 				},
 			},
-			setupMock: func(mockDB *mocks.MockWorkFlowDB, mockCache *cachemocks.MockCache) {
+			setupMock: func(mockDB *dbmocks.MockWorkFlowDB, mockCache *cachemocks.MockCache) {
 				// Mock cache miss so it goes to database
 				cacheKey := "workflow:non-existent-id"
 				mockCache.EXPECT().
@@ -667,7 +666,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 					"name": "John Doe",
 				},
 			},
-			setupMock: func(mockDB *mocks.MockWorkFlowDB, mockCache *cachemocks.MockCache) {
+			setupMock: func(mockDB *dbmocks.MockWorkFlowDB, mockCache *cachemocks.MockCache) {
 				// Mock cache miss so it goes to database
 				cacheKey := "workflow:550e8400-e29b-41d4-a716-446655440000"
 				mockCache.EXPECT().
@@ -696,7 +695,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 			defer ctrl.Finish()
 
 			// Create mocks
-			mockDB := mocks.NewMockWorkFlowDB(ctrl)
+			mockDB := dbmocks.NewMockWorkFlowDB(ctrl)
 			mockCache := cachemocks.NewMockCache(ctrl)
 
 			// Setup expectations

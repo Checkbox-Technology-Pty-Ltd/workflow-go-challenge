@@ -80,4 +80,3 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 		slog.Error("Failed to encode response", "error", err)
 	}
 }
-

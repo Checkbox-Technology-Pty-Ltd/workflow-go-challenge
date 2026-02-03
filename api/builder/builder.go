@@ -167,7 +167,7 @@ func Build(ctx context.Context) (*App, error) {
 	var cacheClient cache.Cache
 	if config.RedisURL == "" {
 		logger.Error("Redis URL not configured")
-		return nil, fmt.Errorf("Redis URL not configured")
+		return nil, fmt.Errorf("redis URL not configured")
 	}
 	cacheClient, err = cache.NewRedisCache(config.RedisURL)
 	if err != nil {
@@ -184,8 +184,8 @@ func Build(ctx context.Context) (*App, error) {
 	if err != nil {
 		logger.Error("Failed to setup services", "error", err)
 		pool.Close()
-		if cacheClient != nil {
-			cacheClient.Close()
+		if err := cacheClient.Close(); err != nil {
+			logger.Error("Failed to close cache", "error", err)
 		}
 		return nil, err
 	}
@@ -261,7 +261,9 @@ func (app *App) Shutdown(ctx context.Context) error {
 // Close releases all resources
 func (app *App) Close() {
 	if app.Cache != nil {
-		app.Cache.Close()
+		if err := app.Cache.Close(); err != nil {
+			slog.Error("Failed to close cache connection")
+		}
 	}
 	if app.DBPool != nil {
 		app.DBPool.Close()
