@@ -134,3 +134,4 @@ make api-lint-fix    # Auto-fix lint issues
 3. Retry logic
 4. Condition node in workflows could have input variable to make it more generic
 5. Add concurrency if have situation that multiple workflow steps run in parallel
+6. For real Email or other types of notifications, can decouple them after a queue
