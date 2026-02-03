@@ -483,9 +483,9 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 				// Add basic nodes for execution
 				workflow.R.WorkflowNodes = models.WorkflowNodeSlice{
 					&models.WorkflowNode{
-						ID:         "node-start",
+						ID:         "start",
 						WorkflowID: "550e8400-e29b-41d4-a716-446655440000",
-						NodeID:     "node-start",
+						NodeID:     "start",
 						Type:       "start",
 						Position:   []byte(`{"x":100,"y":100}`),
 						Data:       null.JSONFrom([]byte(`{"label":"Start"}`)),
@@ -514,7 +514,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 						ID:         "edge-1",
 						WorkflowID: "550e8400-e29b-41d4-a716-446655440000",
 						EdgeID:     "edge-1",
-						Source:     "node-start",
+						Source:     "start",
 						Target:     "node-form",
 					},
 					&models.WorkflowEdge{

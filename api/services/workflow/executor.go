@@ -13,6 +13,8 @@ import (
 	api "workflow-code-test/api/openapi"
 )
 
+const StartNodeID = "start"
+
 // ExecuteWorkflow handles the actual workflow execution
 func (s *Service) ExecuteWorkflow(ctx context.Context, workflowID string, input api.WorkflowExecutionInput) (*api.WorkflowExecutionResult, error) {
 	// Initialize results
@@ -51,14 +53,9 @@ func (s *Service) executeWorkflowSteps(ctx context.Context, workflow api.Workflo
 	steps := []api.ExecutionStep{}
 
 	// Extract values from input for use in execution
-	var executeVars map[string]interface{}
+	var executeVars = make(map[string]any)
 	if input.FormData != nil {
 		executeVars = *input.FormData
-	}
-
-	// Initialize executeVars if nil
-	if executeVars == nil {
-		executeVars = make(map[string]interface{})
 	}
 
 	// Build a map of nodes by ID for quick lookup
@@ -77,24 +74,11 @@ func (s *Service) executeWorkflowSteps(ctx context.Context, workflow api.Workflo
 		}
 	}
 
-	// Find start node
-	var startNodeId string
-	for _, node := range *workflow.Nodes {
-		if node.Type == api.WorkflowNodeTypeStart {
-			startNodeId = node.Id
-			break
-		}
-	}
-
-	if startNodeId == "" {
-		return nil, fmt.Errorf("no start node found in workflow")
-	}
-
 	// Track visited nodes to avoid cycles
 	visited := make(map[string]bool)
 
 	// Execute nodes using BFS traversal from start node
-	queue := []string{startNodeId}
+	queue := []string{StartNodeID}
 
 	for len(queue) > 0 {
 		currentNodeId := queue[0]
@@ -112,102 +96,12 @@ func (s *Service) executeWorkflowSteps(ctx context.Context, workflow api.Workflo
 			slog.Warn("Node not found in nodeMap", "nodeId", currentNodeId)
 			continue
 		}
-		output := make(map[string]interface{})
 
-		// Get label and description from node data
-		var label, description string
-		if node.Data != nil {
-			if node.Data.Label != nil {
-				label = *node.Data.Label
-			}
-			if node.Data.Description != nil {
-				description = *node.Data.Description
-			}
+		// Execute the single node
+		step := s.executeSingleNode(ctx, node, executeVars, input)
+		if step.Error != nil {
+			return steps, fmt.Errorf("step error: %s,%v", step.NodeId, step.Error)
 		}
-
-		step := api.ExecutionStep{
-			NodeId:      node.Id,
-			Type:        string(node.Type),
-			Status:      api.ExecutionStepStatusCompleted,
-			Label:       &label,
-			Description: &description,
-			Output:      &output,
-		}
-
-		switch node.Type {
-		case api.WorkflowNodeTypeStart:
-			output["message"] = "Workflow started successfully"
-
-		case api.WorkflowNodeTypeForm:
-			// Process form fields based on metadata
-			if err := s.processFormNode(node, executeVars, output); err != nil {
-				step.Status = api.ExecutionStepStatusFailed
-				errorMsg := err.Error()
-				step.Error = &errorMsg
-				output["message"] = "Failed to process form data"
-			} else {
-				output["message"] = "Form data processed successfully"
-			}
-
-		case api.WorkflowNodeTypeIntegration:
-			// Process integration node based on metadata
-			if err := s.processIntegrationNode(ctx, node, executeVars, output); err != nil {
-				step.Status = api.ExecutionStepStatusFailed
-				errorMsg := err.Error()
-				step.Error = &errorMsg
-				output["message"] = "Failed to process integration"
-			} else {
-				// Update executeVars with output values for subsequent steps
-				for k, v := range output {
-					executeVars[k] = v
-				}
-
-				// Replace placeholders in description with actual values
-				if node.Data != nil && node.Data.Description != nil {
-					updatedDesc := *node.Data.Description
-					for key, value := range executeVars {
-						placeholder := fmt.Sprintf("{{%s}}", key)
-						updatedDesc = strings.ReplaceAll(updatedDesc, placeholder, fmt.Sprintf("%v", value))
-					}
-					description = updatedDesc
-					step.Description = &description
-				}
-			}
-
-		case api.WorkflowNodeTypeCondition:
-			// Process condition node based on metadata
-			if err := s.processConditionNode(node, executeVars, output, input.Condition); err != nil {
-				step.Status = api.ExecutionStepStatusFailed
-				errorMsg := err.Error()
-				step.Error = &errorMsg
-				output["message"] = "Failed to evaluate condition"
-			} else {
-				// Update executeVars with output values
-				for k, v := range output {
-					executeVars[k] = v
-				}
-			}
-
-		case api.WorkflowNodeTypeEmail:
-			// Process email node based on metadata
-			if err := s.processEmailNode(node, executeVars, output); err != nil {
-				step.Status = api.ExecutionStepStatusFailed
-				errorMsg := err.Error()
-				step.Error = &errorMsg
-				output["message"] = "Failed to process email"
-			} else {
-				// Check if email should be sent based on condition
-				conditionMet, _ := executeVars["conditionMet"].(bool)
-				if !conditionMet {
-					step.Status = api.ExecutionStepStatusSkipped
-					output["message"] = "Email alert skipped - condition not met"
-				}
-			}
-
-		case api.WorkflowNodeTypeEnd:
-			output["message"] = "Workflow completed successfully"
-		}
-
 		steps = append(steps, step)
 
 		// Find next nodes to execute based on edges
@@ -237,8 +131,109 @@ func (s *Service) executeWorkflowSteps(ctx context.Context, workflow api.Workflo
 	return steps, nil
 }
 
-// processIntegrationNode processes integration node based on its metadata configuration
-func (s *Service) processIntegrationNode(ctx context.Context, node api.WorkflowNode, executeVars map[string]interface{}, output map[string]interface{}) error {
+// executeSingleNode executes a single node and returns the execution step
+func (s *Service) executeSingleNode(ctx context.Context, node api.WorkflowNode, executeVars map[string]any, input api.WorkflowExecutionInput) api.ExecutionStep {
+	output := make(map[string]any)
+
+	// Get label and description from node data
+	var label, description string
+	if node.Data != nil {
+		if node.Data.Label != nil {
+			label = *node.Data.Label
+		}
+		if node.Data.Description != nil {
+			description = *node.Data.Description
+		}
+	}
+
+	step := api.ExecutionStep{
+		NodeId:      node.Id,
+		Type:        string(node.Type),
+		Status:      api.ExecutionStepStatusCompleted,
+		Label:       &label,
+		Description: &description,
+		Output:      &output,
+	}
+
+	switch node.Type {
+	case api.WorkflowNodeTypeStart:
+		output["message"] = "Workflow started successfully"
+
+	case api.WorkflowNodeTypeForm:
+		// Execute form fields based on metadata
+		if err := s.executeFormNode(node, executeVars, output); err != nil {
+			step.Status = api.ExecutionStepStatusFailed
+			errorMsg := err.Error()
+			step.Error = &errorMsg
+			output["message"] = "Failed to execute form data"
+		} else {
+			output["message"] = "Form data executed successfully"
+		}
+
+	case api.WorkflowNodeTypeIntegration:
+		// Execute integration node based on metadata
+		if err := s.executeIntegrationNode(ctx, node, executeVars, output); err != nil {
+			step.Status = api.ExecutionStepStatusFailed
+			errorMsg := err.Error()
+			step.Error = &errorMsg
+			output["message"] = "Failed to execute integration"
+		} else {
+			// Update executeVars with output values for subsequent steps
+			for k, v := range output {
+				executeVars[k] = v
+			}
+
+			// Replace placeholders in description with actual values
+			if node.Data != nil && node.Data.Description != nil {
+				updatedDesc := *node.Data.Description
+				for key, value := range executeVars {
+					placeholder := fmt.Sprintf("{{%s}}", key)
+					updatedDesc = strings.ReplaceAll(updatedDesc, placeholder, fmt.Sprintf("%v", value))
+				}
+				description = updatedDesc
+				step.Description = &description
+			}
+		}
+
+	case api.WorkflowNodeTypeCondition:
+		// Execute condition node based on metadata
+		if err := s.executeConditionNode(executeVars, output, input.Condition); err != nil {
+			step.Status = api.ExecutionStepStatusFailed
+			errorMsg := err.Error()
+			step.Error = &errorMsg
+			output["message"] = "Failed to evaluate condition"
+		} else {
+			// Update executeVars with output values
+			for k, v := range output {
+				executeVars[k] = v
+			}
+		}
+
+	case api.WorkflowNodeTypeEmail:
+		// Execute email node based on metadata
+		if err := s.executeEmailNode(node, executeVars, output); err != nil {
+			step.Status = api.ExecutionStepStatusFailed
+			errorMsg := err.Error()
+			step.Error = &errorMsg
+			output["message"] = "Failed to execute email"
+		} else {
+			// Check if email should be sent based on condition
+			conditionMet, _ := executeVars["conditionMet"].(bool)
+			if !conditionMet {
+				step.Status = api.ExecutionStepStatusSkipped
+				output["message"] = "Email alert skipped - condition not met"
+			}
+		}
+
+	case api.WorkflowNodeTypeEnd:
+		output["message"] = "Workflow completed successfully"
+	}
+
+	return step
+}
+
+// executeIntegrationNode executes integration node based on its metadata configuration
+func (s *Service) executeIntegrationNode(ctx context.Context, node api.WorkflowNode, executeVars map[string]any, output map[string]any) error {
 	// Check if node has metadata
 	if node.Data == nil || node.Data.Metadata == nil {
 		return fmt.Errorf("integration node missing metadata")
@@ -252,13 +247,13 @@ func (s *Service) processIntegrationNode(ctx context.Context, node api.WorkflowN
 		return fmt.Errorf("integration node missing inputVariables in metadata")
 	}
 
-	inputVarsList, ok := inputVariables.([]interface{})
+	inputVarsList, ok := inputVariables.([]any)
 	if !ok {
 		return fmt.Errorf("inputVariables must be an array")
 	}
 
 	// Check that all required input variables exist in executeVars
-	inputValues := make(map[string]interface{})
+	inputValues := make(map[string]any)
 	for _, varName := range inputVarsList {
 		varNameStr, ok := varName.(string)
 		if !ok {
@@ -278,15 +273,15 @@ func (s *Service) processIntegrationNode(ctx context.Context, node api.WorkflowN
 		return fmt.Errorf("integration node missing options in metadata")
 	}
 
-	optionsList, ok := options.([]interface{})
+	optionsList, ok := options.([]any)
 	if !ok {
 		return fmt.Errorf("options must be an array")
 	}
 
 	// Find the matching option based on input values
-	var selectedOption map[string]interface{}
+	var selectedOption map[string]any
 	for _, opt := range optionsList {
-		option, ok := opt.(map[string]interface{})
+		option, ok := opt.(map[string]any)
 		if !ok {
 			continue
 		}
@@ -354,8 +349,17 @@ func (s *Service) processIntegrationNode(ctx context.Context, node api.WorkflowN
 		return fmt.Errorf("failed to read API response: %w", err)
 	}
 
+	// Check HTTP status code
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		slog.Error("API returned non-2xx status code",
+			"status", resp.StatusCode,
+			"url", apiURL,
+			"body", string(body))
+		return fmt.Errorf("API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
 	// Parse JSON response with proper number handling
-	var responseData interface{}
+	var responseData any
 	decoder := json.NewDecoder(strings.NewReader(string(body)))
 	decoder.UseNumber() // This ensures numbers are preserved properly
 	if err := decoder.Decode(&responseData); err != nil {
@@ -364,7 +368,7 @@ func (s *Service) processIntegrationNode(ctx context.Context, node api.WorkflowN
 	}
 
 	// Convert to map if it's a map
-	responseMap, ok := responseData.(map[string]interface{})
+	responseMap, ok := responseData.(map[string]any)
 	if !ok {
 		return fmt.Errorf("API response is not a JSON object")
 	}
@@ -375,7 +379,7 @@ func (s *Service) processIntegrationNode(ctx context.Context, node api.WorkflowN
 	// Get outputVariables from metadata
 	outputVariables, hasOutputVars := metadata["outputVariables"]
 	if hasOutputVars {
-		outputVarsList, ok := outputVariables.([]interface{})
+		outputVarsList, ok := outputVariables.([]any)
 		if ok {
 			// Extract specified output variables from response using recursive search
 			for _, varName := range outputVarsList {
@@ -404,7 +408,7 @@ func (s *Service) processIntegrationNode(ctx context.Context, node api.WorkflowN
 
 	// Copy input values to output if they're also listed in outputVariables
 	// This handles cases where we want to pass through input values
-	if outputVarsList, ok := outputVariables.([]interface{}); ok {
+	if outputVarsList, ok := outputVariables.([]any); ok {
 		for _, varName := range outputVarsList {
 			varNameStr, ok := varName.(string)
 			if !ok {
@@ -422,67 +426,8 @@ func (s *Service) processIntegrationNode(ctx context.Context, node api.WorkflowN
 	return nil
 }
 
-// findValueInMap recursively searches for a key in a map up to maxDepth levels
-// It collects all matching values and returns the first numeric one if available
-func findValueInMap(data map[string]interface{}, key string, currentDepth int, maxDepth int) interface{} {
-	var candidates []interface{}
-	findValueInMapHelper(data, key, currentDepth, maxDepth, &candidates)
-
-	// Prefer numeric values over strings
-	for _, candidate := range candidates {
-		switch v := candidate.(type) {
-		case float64:
-			return v
-		case json.Number:
-			if floatVal, err := v.Float64(); err == nil {
-				return floatVal
-			}
-		case int, int64, int32, float32:
-			return v
-		}
-	}
-
-	// If no numeric value found, return the first candidate if any
-	if len(candidates) > 0 {
-		return candidates[0]
-	}
-
-	return nil
-}
-
-// findValueInMapHelper is a helper that collects all values for a given key
-func findValueInMapHelper(data map[string]interface{}, key string, currentDepth int, maxDepth int, candidates *[]interface{}) {
-	// Check if the key exists at the current level
-	if value, exists := data[key]; exists {
-		// Handle JSON number type
-		switch v := value.(type) {
-		case json.Number:
-			if floatVal, err := v.Float64(); err == nil {
-				*candidates = append(*candidates, floatVal)
-			} else {
-				*candidates = append(*candidates, v)
-			}
-		default:
-			*candidates = append(*candidates, value)
-		}
-	}
-
-	// If we've reached max depth, stop searching
-	if currentDepth >= maxDepth {
-		return
-	}
-
-	// Recursively search in nested maps
-	for _, v := range data {
-		switch nested := v.(type) {
-		case map[string]interface{}:
-			findValueInMapHelper(nested, key, currentDepth+1, maxDepth, candidates)
-		}
-	}
-}
-
-// processConditionNode processes condition node based on its metadata and executeVars
-func (s *Service) processConditionNode(node api.WorkflowNode, executeVars map[string]interface{}, output map[string]interface{}, condition *api.Condition) error {
+// executeConditionNode executes condition node based on its metadata and executeVars
+func (s *Service) executeConditionNode(executeVars map[string]any, output map[string]any, condition *api.Condition) error {
 	// Check if condition configuration is provided
 	if condition == nil {
 		return fmt.Errorf("condition configuration is missing")
@@ -510,27 +455,8 @@ func (s *Service) processConditionNode(node api.WorkflowNode, executeVars map[st
 	return nil
 }
 
-// evaluateCondition evaluates a condition based on operator and threshold
-func evaluateCondition(value float64, operator string, threshold float64) bool {
-	switch operator {
-	case "greater_than":
-		return value > threshold
-	case "less_than":
-		return value < threshold
-	case "equals":
-		return value == threshold
-	case "greater_than_or_equal":
-		return value >= threshold
-	case "less_than_or_equal":
-		return value <= threshold
-	default:
-		slog.Warn("Unknown operator, defaulting to greater_than", "operator", operator)
-		return value > threshold
-	}
-}
-
-// processEmailNode processes email node based on its metadata configuration
-func (s *Service) processEmailNode(node api.WorkflowNode, executeVars map[string]interface{}, output map[string]interface{}) error {
+// executeEmailNode executes email node based on its metadata configuration
+func (s *Service) executeEmailNode(node api.WorkflowNode, executeVars map[string]any, output map[string]any) error {
 	// Check if node has metadata
 	if node.Data == nil || node.Data.Metadata == nil {
 		return fmt.Errorf("email node missing metadata")
@@ -538,21 +464,14 @@ func (s *Service) processEmailNode(node api.WorkflowNode, executeVars map[string
 
 	metadata := *node.Data.Metadata
 
-	// Check if condition was met (for conditional emails)
-	conditionMet, hasCondition := executeVars["conditionMet"].(bool)
-	if hasCondition && !conditionMet {
-		// Condition not met, email will be skipped
-		return nil
-	}
-
 	// Get inputVariables from metadata
 	inputVariables, hasInputVars := metadata["inputVariables"]
-	var inputValues map[string]interface{}
+	var inputValues map[string]any
 
 	if hasInputVars {
-		inputVarsList, ok := inputVariables.([]interface{})
+		inputVarsList, ok := inputVariables.([]any)
 		if ok {
-			inputValues = make(map[string]interface{})
+			inputValues = make(map[string]any)
 			for _, varName := range inputVarsList {
 				varNameStr, ok := varName.(string)
 				if !ok {
@@ -575,12 +494,12 @@ func (s *Service) processEmailNode(node api.WorkflowNode, executeVars map[string
 		return fmt.Errorf("email node missing emailTemplate in metadata")
 	}
 
-	templateMap, ok := emailTemplate.(map[string]interface{})
+	templateMap, ok := emailTemplate.(map[string]any)
 	if !ok {
 		return fmt.Errorf("emailTemplate must be an object")
 	}
 
-	// Process email template - replace placeholders with values
+	// Execute email template - replace placeholders with values
 	subject, _ := templateMap["subject"].(string)
 	body, _ := templateMap["body"].(string)
 
@@ -598,7 +517,7 @@ func (s *Service) processEmailNode(node api.WorkflowNode, executeVars map[string
 	}
 
 	// Build email draft
-	output["emailDraft"] = map[string]interface{}{
+	output["emailDraft"] = map[string]any{
 		"to":        email,
 		"from":      "weather-alerts@example.com", // This could also come from metadata
 		"subject":   subject,
@@ -613,7 +532,7 @@ func (s *Service) processEmailNode(node api.WorkflowNode, executeVars map[string
 
 	// Get outputVariables from metadata and set them
 	if outputVariables, hasOutputVars := metadata["outputVariables"]; hasOutputVars {
-		if outputVarsList, ok := outputVariables.([]interface{}); ok {
+		if outputVarsList, ok := outputVariables.([]any); ok {
 			for _, varName := range outputVarsList {
 				varNameStr, ok := varName.(string)
 				if !ok {
@@ -634,8 +553,8 @@ func (s *Service) processEmailNode(node api.WorkflowNode, executeVars map[string
 	return nil
 }
 
-// processFormNode processes form node data based on its metadata configuration
-func (s *Service) processFormNode(node api.WorkflowNode, executeVars map[string]interface{}, output map[string]interface{}) error {
+// executeFormNode executes form node data based on its metadata configuration
+func (s *Service) executeFormNode(node api.WorkflowNode, executeVars map[string]any, output map[string]any) error {
 	// Check if node has metadata
 	if node.Data == nil || node.Data.Metadata == nil {
 		// No metadata, just copy all executeVars to output
@@ -658,7 +577,7 @@ func (s *Service) processFormNode(node api.WorkflowNode, executeVars map[string]
 	}
 
 	// Parse outputVariables
-	outputVarsList, ok := outputVariables.([]interface{})
+	outputVarsList, ok := outputVariables.([]any)
 	if !ok {
 		return fmt.Errorf("outputVariables must be an array")
 	}
@@ -682,7 +601,7 @@ func (s *Service) processFormNode(node api.WorkflowNode, executeVars map[string]
 
 	// Also check for inputFields to validate if all required fields are present
 	if inputFields, hasInputFields := metadata["inputFields"]; hasInputFields {
-		inputFieldsList, ok := inputFields.([]interface{})
+		inputFieldsList, ok := inputFields.([]any)
 		if ok {
 			for _, field := range inputFieldsList {
 				fieldStr, ok := field.(string)
