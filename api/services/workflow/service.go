@@ -8,11 +8,12 @@ import (
 )
 
 type Service struct {
-	db *pgxpool.Pool
+	repo Repository
 }
 
 func NewService(pool *pgxpool.Pool) (*Service, error) {
-	return &Service{db: pool}, nil
+	repo := NewRepository(pool)
+	return &Service{repo: repo}, nil
 }
 
 // jsonMiddleware sets the Content-Type header to application/json
