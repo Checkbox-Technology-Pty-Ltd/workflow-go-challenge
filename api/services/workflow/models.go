@@ -99,6 +99,87 @@ type EdgeResponse struct {
 }
 
 // =============================================================================
+// Execution Request/Response Models
+// =============================================================================
+
+// ExecuteWorkflowRequest is the request body for POST /workflows/{id}/execute
+type ExecuteWorkflowRequest struct {
+	FormData  FormData  `json:"formData"`
+	Condition Condition `json:"condition"`
+}
+
+// FormData contains user input values
+type FormData struct {
+	Name      string  `json:"name"`
+	Email     string  `json:"email"`
+	City      string  `json:"city"`
+	Operator  string  `json:"operator"`
+	Threshold float64 `json:"threshold"`
+}
+
+// Condition contains the condition parameters
+type Condition struct {
+	Operator  string  `json:"operator"`
+	Threshold float64 `json:"threshold"`
+}
+
+// ExecutionResponse is the response for workflow execution
+type ExecutionResponse struct {
+	ExecutionID   string          `json:"executionId"`
+	Status        string          `json:"status"`
+	StartTime     string          `json:"startTime"`
+	EndTime       string          `json:"endTime"`
+	TotalDuration int64           `json:"totalDuration,omitempty"`
+	Steps         []ExecutionStep `json:"steps"`
+}
+
+// ExecutionStep represents a single step in the execution trace
+type ExecutionStep struct {
+	StepNumber int            `json:"stepNumber"`
+	NodeType   string         `json:"nodeType"`
+	Status     string         `json:"status"`
+	Duration   int64          `json:"duration"`
+	Output     StepOutput     `json:"output"`
+	Timestamp  string         `json:"timestamp"`
+	Error      string         `json:"error,omitempty"`
+}
+
+// StepOutput contains the output of an execution step
+type StepOutput struct {
+	Message         string           `json:"message"`
+	Details         map[string]any   `json:"details,omitempty"`
+	FormData        *FormData        `json:"formData,omitempty"`
+	APIResponse     *APIResponse     `json:"apiResponse,omitempty"`
+	ConditionResult *ConditionResult `json:"conditionResult,omitempty"`
+	EmailContent    *EmailContent    `json:"emailContent,omitempty"`
+}
+
+// APIResponse contains details of an API call
+type APIResponse struct {
+	Endpoint   string `json:"endpoint"`
+	Method     string `json:"method"`
+	StatusCode int    `json:"statusCode"`
+	Data       any    `json:"data"`
+}
+
+// ConditionResult contains the result of a condition evaluation
+type ConditionResult struct {
+	Expression  string  `json:"expression"`
+	Result      bool    `json:"result"`
+	Temperature float64 `json:"temperature"`
+	Operator    string  `json:"operator"`
+	Threshold   float64 `json:"threshold"`
+}
+
+// EmailContent contains email details
+type EmailContent struct {
+	To        string `json:"to"`
+	Subject   string `json:"subject"`
+	Body      string `json:"body"`
+	Timestamp string `json:"timestamp,omitempty"`
+}
+
+// =============================================================================
 // Conversion functions - DB models to API response models
 // =============================================================================
 

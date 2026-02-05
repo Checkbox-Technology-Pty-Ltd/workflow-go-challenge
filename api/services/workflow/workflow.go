@@ -70,91 +70,179 @@ func (s *Service) HandleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// TODO: Update this
 func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
-	id := mux.Vars(r)["id"]
-	slog.Debug("Handling workflow execution for id", "id", id)
+	ctx := r.Context()
+	idStr := mux.Vars(r)["id"]
+	slog.Debug("Executing workflow", "id", idStr)
 
-	// Generate current timestamp
-	currentTime := time.Now().Format(time.RFC3339)
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid workflow id", http.StatusBadRequest)
+		return
+	}
 
-	executionJSON := fmt.Sprintf(`{
-		"executedAt": "%s",
-		"status": "completed",
-		"steps": [
-			{
-				"nodeId": "start",
-				"type": "start",
-				"label": "Start",
-				"description": "Begin weather check workflow",
-				"status": "completed"
+	var req ExecuteWorkflowRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	_, err = s.repo.GetWorkflow(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "workflow not found", http.StatusNotFound)
+			return
+		}
+		slog.Error("failed to get workflow", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	startTime := time.Now()
+	executionID := uuid.New()
+
+	// Mock temperature based on city (simulating API call)
+	temperature := getMockTemperature(req.FormData.City)
+
+	// Evaluate condition
+	conditionMet := evaluateCondition(temperature, req.Condition.Operator, req.Condition.Threshold)
+
+	endTime := time.Now()
+	duration := endTime.Sub(startTime).Milliseconds()
+
+	steps := buildExecutionSteps(req.FormData, temperature, conditionMet, startTime)
+
+	response := ExecutionResponse{
+		ExecutionID:   executionID.String(),
+		Status:        "completed",
+		StartTime:     startTime.Format(time.RFC3339),
+		EndTime:       endTime.Format(time.RFC3339),
+		TotalDuration: duration,
+		Steps:         steps,
+	}
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("failed to encode response", "error", err)
+	}
+}
+
+func getMockTemperature(city string) float64 {
+	temperatures := map[string]float64{
+		"Sydney":    28.5,
+		"Melbourne": 22.3,
+		"Brisbane":  31.2,
+		"Perth":     35.1,
+		"Adelaide":  26.8,
+	}
+	if temp, ok := temperatures[city]; ok {
+		return temp
+	}
+	return 25.0
+}
+
+func evaluateCondition(temperature float64, operator string, threshold float64) bool {
+	switch operator {
+	case "greater_than":
+		return temperature > threshold
+	case "less_than":
+		return temperature < threshold
+	case "equals":
+		return temperature == threshold
+	case "greater_than_or_equal":
+		return temperature >= threshold
+	case "less_than_or_equal":
+		return temperature <= threshold
+	default:
+		return false
+	}
+}
+
+func buildExecutionSteps(formData FormData, temperature float64, conditionMet bool, startTime time.Time) []ExecutionStep {
+	steps := []ExecutionStep{
+		{
+			StepNumber: 1,
+			NodeType:   "start",
+			Status:     "success",
+			Duration:   10,
+			Output:     StepOutput{Message: "Workflow started"},
+			Timestamp:  startTime.Format(time.RFC3339),
+		},
+		{
+			StepNumber: 2,
+			NodeType:   "form",
+			Status:     "success",
+			Duration:   15,
+			Output: StepOutput{
+				Message:  "User input collected",
+				FormData: &formData,
 			},
-			{
-				"nodeId": "form",
-				"type": "form",
-				"label": "User Input",
-				"description": "Process collected data - name, email, location",
-				"status": "completed",
-				"output": {
-					"name": "Alice",
-					"email": "alice@example.com",
-					"city": "Sydney"
-				}
-			},
-			{
-				"nodeId": "weather-api",
-				"type": "integration",
-				"label": "Weather API",
-				"description": "Fetch current temperature for Sydney",
-				"status": "completed",
-				"output": {
-					"temperature": 28.5,
-					"location": "Sydney"
-				}
-			},
-			{
-				"nodeId": "condition",
-				"type": "condition",
-				"label": "Check Condition",
-				"description": "Evaluate temperature threshold",
-				"status": "completed",
-				"output": {
-					"conditionMet": true,
-					"threshold": 25,
-					"operator": "greater_than",
-					"actualValue": 28.5,
-					"message": "Temperature 28.5°C is greater than 25°C - condition met"
-				}
-			},
-			{
-				"nodeId": "email",
-				"type": "email",
-				"label": "Send Alert",
-				"description": "Email weather alert notification",
-				"status": "completed",
-				"output": {
-					"emailDraft": {
-						"to": "alice@example.com",
-						"from": "weather-alerts@example.com",
-						"subject": "Weather Alert",
-						"body": "Weather alert for Sydney! Temperature is 28.5°C!",
-						"timestamp": "2024-01-15T14:30:24.856Z"
+			Timestamp: startTime.Add(10 * time.Millisecond).Format(time.RFC3339),
+		},
+		{
+			StepNumber: 3,
+			NodeType:   "integration",
+			Status:     "success",
+			Duration:   150,
+			Output: StepOutput{
+				Message: fmt.Sprintf("Fetched weather data for %s", formData.City),
+				APIResponse: &APIResponse{
+					Endpoint:   "https://api.open-meteo.com/v1/forecast",
+					Method:     "GET",
+					StatusCode: 200,
+					Data: map[string]any{
+						"temperature": temperature,
+						"city":        formData.City,
 					},
-					"deliveryStatus": "sent",
-					"messageId": "msg_abc123def456",
-					"emailSent": true
-				}
+				},
 			},
-			{
-				"nodeId": "end",
-				"type": "end",
-				"label": "Complete",
-				"description": "Workflow execution finished",
-				"status": "completed"
-			}
-		]
-	}`, currentTime)
+			Timestamp: startTime.Add(25 * time.Millisecond).Format(time.RFC3339),
+		},
+		{
+			StepNumber: 4,
+			NodeType:   "condition",
+			Status:     "success",
+			Duration:   5,
+			Output: StepOutput{
+				Message: fmt.Sprintf("Condition evaluated: temperature %.1f°C %s %.1f°C", temperature, formData.Operator, formData.Threshold),
+				ConditionResult: &ConditionResult{
+					Expression:  fmt.Sprintf("temperature %s %.1f", formData.Operator, formData.Threshold),
+					Result:      conditionMet,
+					Temperature: temperature,
+					Operator:    formData.Operator,
+					Threshold:   formData.Threshold,
+				},
+			},
+			Timestamp: startTime.Add(175 * time.Millisecond).Format(time.RFC3339),
+		},
+	}
 
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(executionJSON))
+	if conditionMet {
+		steps = append(steps, ExecutionStep{
+			StepNumber: 5,
+			NodeType:   "email",
+			Status:     "success",
+			Duration:   50,
+			Output: StepOutput{
+				Message: "Alert email sent",
+				EmailContent: &EmailContent{
+					To:        formData.Email,
+					Subject:   "Weather Alert",
+					Body:      fmt.Sprintf("Hi %s, weather alert for %s! Temperature is %.1f°C!", formData.Name, formData.City, temperature),
+					Timestamp: startTime.Add(180 * time.Millisecond).Format(time.RFC3339),
+				},
+			},
+			Timestamp: startTime.Add(180 * time.Millisecond).Format(time.RFC3339),
+		})
+	}
+
+	steps = append(steps, ExecutionStep{
+		StepNumber: len(steps) + 1,
+		NodeType:   "end",
+		Status:     "success",
+		Duration:   5,
+		Output:     StepOutput{Message: "Workflow completed"},
+		Timestamp:  startTime.Add(235 * time.Millisecond).Format(time.RFC3339),
+	})
+
+	return steps
 }
