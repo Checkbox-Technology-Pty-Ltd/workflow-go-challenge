@@ -121,6 +121,23 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 		Steps:         steps,
 	}
 
+	// Persist execution to database
+	finalContext, _ := json.Marshal(req.FormData)
+	executionTrace, _ := json.Marshal(steps)
+
+	exec := &WorkflowExecution{
+		ID:             executionID,
+		WorkflowID:     &id,
+		Status:         "completed",
+		FinalContext:   finalContext,
+		ExecutionTrace: executionTrace,
+	}
+
+	if err := s.repo.CreateExecution(ctx, exec); err != nil {
+		slog.Error("failed to save execution", "error", err)
+		// Continue returning response even if persistence fails
+	}
+
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		slog.Error("failed to encode response", "error", err)
 	}

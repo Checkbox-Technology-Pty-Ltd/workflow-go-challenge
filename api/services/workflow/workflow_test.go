@@ -261,6 +261,53 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 		},
 	}
 
+	// Test that execution is persisted
+	t.Run("execution is persisted to database", func(t *testing.T) {
+		var savedExec *WorkflowExecution
+		mock := &MockRepository{
+			GetWorkflowFunc: func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
+				return &Workflow{ID: validID, Name: "Test Workflow"}, nil
+			},
+			CreateExecutionFunc: func(ctx context.Context, exec *WorkflowExecution) error {
+				savedExec = exec
+				return nil
+			},
+		}
+
+		svc := &Service{repo: mock}
+
+		req := httptest.NewRequest(http.MethodPost, "/workflows/"+validID.String()+"/execute", strings.NewReader(validRequestBody))
+		req.Header.Set("Content-Type", "application/json")
+		req = mux.SetURLVars(req, map[string]string{"id": validID.String()})
+		rec := httptest.NewRecorder()
+
+		svc.HandleExecuteWorkflow(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", rec.Code)
+		}
+
+		if savedExec == nil {
+			t.Fatal("expected CreateExecution to be called")
+		}
+
+		if savedExec.WorkflowID == nil || *savedExec.WorkflowID != validID {
+			t.Errorf("expected workflow ID %s, got %v", validID, savedExec.WorkflowID)
+		}
+
+		if savedExec.Status != "completed" {
+			t.Errorf("expected status 'completed', got %q", savedExec.Status)
+		}
+
+		if len(savedExec.FinalContext) == 0 {
+			t.Error("expected FinalContext to contain form data")
+		}
+
+		if len(savedExec.ExecutionTrace) == 0 {
+			t.Error("expected ExecutionTrace to contain steps")
+		}
+	})
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &MockRepository{}
