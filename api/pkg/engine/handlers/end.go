@@ -17,12 +17,15 @@ func NewEndHandler() *EndHandler {
 func (h *EndHandler) NodeType() string { return "end" }
 
 func (h *EndHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (engine.ExecutionStep, error) {
+	startTime := time.Now()
+	duration := time.Since(startTime).Milliseconds()
+
 	return engine.ExecutionStep{
 		StepNumber: ec.StepNumber,
 		NodeType:   "end",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   EndNodeDuration,
+		Duration:   duration,
 		Output:     map[string]interface{}{"message": "Workflow completed"},
 		Timestamp:  time.Now().Format(time.RFC3339),
 	}, nil

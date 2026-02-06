@@ -21,6 +21,8 @@ func NewEmailHandler() *EmailHandler {
 func (h *EmailHandler) NodeType() string { return "email" }
 
 func (h *EmailHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (engine.ExecutionStep, error) {
+	startTime := time.Now()
+
 	// Get recipient from form data
 	to := ec.GetString("form.email")
 	if to == "" {
@@ -50,13 +52,14 @@ func (h *EmailHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (
 	body := fmt.Sprintf("Hi %s, weather alert for %s! Temperature is %.1f°C!", name, city, temperature)
 
 	timestamp := time.Now().Format(time.RFC3339)
+	duration := time.Since(startTime).Milliseconds()
 
 	return engine.ExecutionStep{
 		StepNumber: ec.StepNumber,
 		NodeType:   "email",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   EmailNodeDuration,
+		Duration:   duration,
 		Output: map[string]interface{}{
 			"message": "Alert email sent",
 			"emailContent": map[string]interface{}{

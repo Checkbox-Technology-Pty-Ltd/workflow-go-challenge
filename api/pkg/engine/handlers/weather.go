@@ -25,6 +25,8 @@ func NewWeatherHandler(weatherFn WeatherFunc) *WeatherHandler {
 func (h *WeatherHandler) NodeType() string { return "integration" }
 
 func (h *WeatherHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (engine.ExecutionStep, error) {
+	startTime := time.Now()
+
 	city := ec.GetString("form.city")
 	if city == "" {
 		return engine.ExecutionStep{}, fmt.Errorf("city not provided in form data")
@@ -42,12 +44,14 @@ func (h *WeatherHandler) Execute(ec *engine.ExecutionContext, node *engine.Node)
 	// Store temperature in state for downstream handlers
 	ec.Set("weather.temperature", temperature)
 
+	duration := time.Since(startTime).Milliseconds()
+
 	return engine.ExecutionStep{
 		StepNumber: ec.StepNumber,
 		NodeType:   "integration",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   WeatherNodeDuration,
+		Duration:   duration,
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Fetched weather data for %s", city),
 			"apiResponse": map[string]interface{}{

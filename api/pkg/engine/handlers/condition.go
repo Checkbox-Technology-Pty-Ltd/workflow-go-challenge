@@ -21,6 +21,8 @@ func NewConditionHandler() *ConditionHandler {
 func (h *ConditionHandler) NodeType() string { return "condition" }
 
 func (h *ConditionHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (engine.ExecutionStep, error) {
+	startTime := time.Now()
+
 	// Parse metadata for operator and threshold
 	var metadata struct {
 		Operator  string  `json:"operator"`
@@ -41,12 +43,14 @@ func (h *ConditionHandler) Execute(ec *engine.ExecutionContext, node *engine.Nod
 
 	result := evaluateCondition(temperature, metadata.Operator, metadata.Threshold)
 
+	duration := time.Since(startTime).Milliseconds()
+
 	return engine.ExecutionStep{
 		StepNumber: ec.StepNumber,
 		NodeType:   "condition",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   ConditionNodeDuration,
+		Duration:   duration,
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Condition evaluated: temperature %.1f°C %s %.1f°C", temperature, metadata.Operator, metadata.Threshold),
 			"conditionResult": map[string]interface{}{

@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,8 +84,9 @@ func (s *Service) HandleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 		Edges: edgeResponses,
 	}
 
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := writeJSON(w, response); err != nil {
 		slog.Error("failed to encode response", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
 
@@ -231,8 +233,9 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := writeJSON(w, response); err != nil {
 		slog.Error("failed to encode response", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
 
@@ -293,8 +296,9 @@ func (s *Service) HandleGetExecutions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := ExecutionsListResponse{Executions: summaries}
-	if err := json.NewEncoder(w).Encode(response); err != nil {
+	if err := writeJSON(w, response); err != nil {
 		slog.Error("failed to encode response", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 	}
 }
 
@@ -418,4 +422,15 @@ func getBool(m map[string]interface{}, key string) bool {
 		return v
 	}
 	return false
+}
+
+// writeJSON encodes the response to a buffer first, then writes to the response writer.
+// This ensures that if encoding fails, we don't send a corrupted partial response.
+func writeJSON(w http.ResponseWriter, v interface{}) error {
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
+		return err
+	}
+	_, err := buf.WriteTo(w)
+	return err
 }

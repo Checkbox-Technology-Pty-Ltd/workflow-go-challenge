@@ -19,6 +19,8 @@ func NewFormHandler() *FormHandler {
 func (h *FormHandler) NodeType() string { return "form" }
 
 func (h *FormHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (engine.ExecutionStep, error) {
+	startTime := time.Now()
+
 	// Form data should already be in state (populated by the workflow service)
 	// This handler just records that form input was collected
 
@@ -28,12 +30,14 @@ func (h *FormHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (e
 		"city":  ec.GetString("form.city"),
 	}
 
+	duration := time.Since(startTime).Milliseconds()
+
 	return engine.ExecutionStep{
 		StepNumber: ec.StepNumber,
 		NodeType:   "form",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   FormNodeDuration,
+		Duration:   duration,
 		Output: map[string]interface{}{
 			"message":  "User input collected",
 			"formData": formData,

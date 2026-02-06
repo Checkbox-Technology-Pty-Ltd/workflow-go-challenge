@@ -17,12 +17,15 @@ func NewStartHandler() *StartHandler {
 func (h *StartHandler) NodeType() string { return "start" }
 
 func (h *StartHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (engine.ExecutionStep, error) {
+	startTime := time.Now()
+	duration := time.Since(startTime).Milliseconds()
+
 	return engine.ExecutionStep{
 		StepNumber: ec.StepNumber,
 		NodeType:   "start",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   StartNodeDuration,
+		Duration:   duration,
 		Output:     map[string]interface{}{"message": "Workflow started"},
 		Timestamp:  ec.StartTime.Format(time.RFC3339),
 	}, nil
