@@ -11,9 +11,15 @@ import (
 
 // Repository defines the interface for workflow data access
 type Repository interface {
+	// Workflow operations
 	GetWorkflow(ctx context.Context, id uuid.UUID) (*Workflow, error)
 	GetNodesByWorkflowID(ctx context.Context, workflowID uuid.UUID) ([]Node, error)
 	GetEdgesByWorkflowID(ctx context.Context, workflowID uuid.UUID) ([]Edge, error)
+
+	// Execution operations
+	CreateExecution(ctx context.Context, exec *WorkflowExecution) error
+	GetExecution(ctx context.Context, id uuid.UUID) (*WorkflowExecution, error)
+	GetExecutionsByWorkflowID(ctx context.Context, workflowID uuid.UUID) ([]WorkflowExecution, error)
 }
 
 // PostgresRepository implements Repository using PostgreSQL
@@ -90,4 +96,70 @@ func (r *PostgresRepository) GetEdgesByWorkflowID(ctx context.Context, workflowI
 	}
 
 	return edges, nil
+}
+
+// CreateExecution inserts a new workflow execution record
+func (r *PostgresRepository) CreateExecution(ctx context.Context, exec *WorkflowExecution) error {
+	query := `
+		INSERT INTO workflow_executions (id, workflow_id, status, final_context, execution_trace)
+		VALUES ($1, $2, $3, $4, $5)
+	`
+
+	_, err := r.db.Exec(ctx, query,
+		exec.ID,
+		exec.WorkflowID,
+		exec.Status,
+		exec.FinalContext,
+		exec.ExecutionTrace,
+	)
+	if err != nil {
+		return fmt.Errorf("insert execution %s: %w", exec.ID, err)
+	}
+
+	return nil
+}
+
+// GetExecution retrieves an execution by ID
+func (r *PostgresRepository) GetExecution(ctx context.Context, id uuid.UUID) (*WorkflowExecution, error) {
+	query := `
+		SELECT id, workflow_id, status, executed_at, final_context, execution_trace
+		FROM workflow_executions
+		WHERE id = $1
+	`
+
+	rows, err := r.db.Query(ctx, query, id)
+	if err != nil {
+		return nil, fmt.Errorf("query execution %s: %w", id, err)
+	}
+	defer rows.Close()
+
+	exec, err := pgx.CollectOneRow(rows, pgx.RowToStructByName[WorkflowExecution])
+	if err != nil {
+		return nil, fmt.Errorf("scan execution %s: %w", id, err)
+	}
+
+	return &exec, nil
+}
+
+// GetExecutionsByWorkflowID retrieves all executions for a workflow
+func (r *PostgresRepository) GetExecutionsByWorkflowID(ctx context.Context, workflowID uuid.UUID) ([]WorkflowExecution, error) {
+	query := `
+		SELECT id, workflow_id, status, executed_at, final_context, execution_trace
+		FROM workflow_executions
+		WHERE workflow_id = $1
+		ORDER BY executed_at DESC
+	`
+
+	rows, err := r.db.Query(ctx, query, workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("query executions for workflow %s: %w", workflowID, err)
+	}
+	defer rows.Close()
+
+	execs, err := pgx.CollectRows(rows, pgx.RowToStructByName[WorkflowExecution])
+	if err != nil {
+		return nil, fmt.Errorf("scan executions for workflow %s: %w", workflowID, err)
+	}
+
+	return execs, nil
 }
