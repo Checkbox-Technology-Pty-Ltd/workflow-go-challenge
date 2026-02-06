@@ -162,7 +162,7 @@ func buildExecutionSteps(formData FormData, temperature float64, conditionMet bo
 		{
 			StepNumber: 1,
 			NodeType:   "start",
-			Status:     "success",
+			Status:     "completed",
 			Duration:   10,
 			Output:     StepOutput{Message: "Workflow started"},
 			Timestamp:  startTime.Format(time.RFC3339),
@@ -170,7 +170,7 @@ func buildExecutionSteps(formData FormData, temperature float64, conditionMet bo
 		{
 			StepNumber: 2,
 			NodeType:   "form",
-			Status:     "success",
+			Status:     "completed",
 			Duration:   15,
 			Output: StepOutput{
 				Message:  "User input collected",
@@ -181,7 +181,7 @@ func buildExecutionSteps(formData FormData, temperature float64, conditionMet bo
 		{
 			StepNumber: 3,
 			NodeType:   "integration",
-			Status:     "success",
+			Status:     "completed",
 			Duration:   150,
 			Output: StepOutput{
 				Message: fmt.Sprintf("Fetched weather data for %s", formData.City),
@@ -200,7 +200,7 @@ func buildExecutionSteps(formData FormData, temperature float64, conditionMet bo
 		{
 			StepNumber: 4,
 			NodeType:   "condition",
-			Status:     "success",
+			Status:     "completed",
 			Duration:   5,
 			Output: StepOutput{
 				Message: fmt.Sprintf("Condition evaluated: temperature %.1f°C %s %.1f°C", temperature, formData.Operator, formData.Threshold),
@@ -220,7 +220,7 @@ func buildExecutionSteps(formData FormData, temperature float64, conditionMet bo
 		steps = append(steps, ExecutionStep{
 			StepNumber: 5,
 			NodeType:   "email",
-			Status:     "success",
+			Status:     "completed",
 			Duration:   50,
 			Output: StepOutput{
 				Message: "Alert email sent",
@@ -238,7 +238,7 @@ func buildExecutionSteps(formData FormData, temperature float64, conditionMet bo
 	steps = append(steps, ExecutionStep{
 		StepNumber: len(steps) + 1,
 		NodeType:   "end",
-		Status:     "success",
+		Status:     "completed",
 		Duration:   5,
 		Output:     StepOutput{Message: "Workflow completed"},
 		Timestamp:  startTime.Add(235 * time.Millisecond).Format(time.RFC3339),
