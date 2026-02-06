@@ -3,7 +3,11 @@ package engine
 import (
 	"context"
 	"fmt"
+	"time"
 )
+
+// DefaultExecutionTimeout is the maximum time allowed for a workflow execution
+const DefaultExecutionTimeout = 30 * time.Second
 
 // Edge represents a connection between two nodes
 type Edge struct {
@@ -79,10 +83,15 @@ func NewExecutor(registry *Registry) *Executor {
 
 // Execute runs the workflow and returns execution steps.
 // The initialState map is copied into the ExecutionContext before execution.
+// Execution is cancelled if the context times out (default: 30 seconds).
 func (e *Executor) Execute(ctx context.Context, graph *Graph, initialState map[string]interface{}) ([]ExecutionStep, error) {
 	if err := graph.Validate(); err != nil {
 		return nil, err
 	}
+
+	// Apply execution timeout if not already set
+	ctx, cancel := context.WithTimeout(ctx, DefaultExecutionTimeout)
+	defer cancel()
 
 	var steps []ExecutionStep
 
@@ -97,6 +106,11 @@ func (e *Executor) Execute(ctx context.Context, graph *Graph, initialState map[s
 	visited := make(map[string]bool)
 
 	for currentNodeID != "" {
+		// Check for context cancellation/timeout
+		if ctx.Err() != nil {
+			return steps, fmt.Errorf("workflow execution cancelled: %w", ctx.Err())
+		}
+
 		// Prevent infinite loops
 		if visited[currentNodeID] {
 			return nil, fmt.Errorf("cycle detected at node %s", currentNodeID)

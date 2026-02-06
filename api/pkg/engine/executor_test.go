@@ -313,3 +313,45 @@ func (h *stateCheckHandler) Execute(ec *ExecutionContext, node *Node) (Execution
 		Output:     map[string]interface{}{"checked": val},
 	}, nil
 }
+
+func TestExecutor_ContextCancellation(t *testing.T) {
+	graph := NewGraph()
+	graph.AddNode(&Node{ID: "start-1", Type: "start"})
+	graph.AddNode(&Node{ID: "slow-1", Type: "slow"})
+	graph.AddNode(&Node{ID: "end-1", Type: "end"})
+	graph.AddEdge(Edge{SourceID: "start-1", TargetID: "slow-1"})
+	graph.AddEdge(Edge{SourceID: "slow-1", TargetID: "end-1"})
+
+	registry := NewRegistry()
+	registry.Register(&mockHandler{nodeType: "start", output: map[string]interface{}{"message": "started"}})
+	registry.Register(&slowHandler{})
+	registry.Register(&mockHandler{nodeType: "end", output: map[string]interface{}{"message": "ended"}})
+
+	executor := NewExecutor(registry)
+
+	// Create a context that's already cancelled
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := executor.Execute(ctx, graph, nil)
+	if err == nil {
+		t.Error("expected error when context is cancelled")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("expected context.Canceled error, got: %v", err)
+	}
+}
+
+type slowHandler struct{}
+
+func (h *slowHandler) NodeType() string { return "slow" }
+func (h *slowHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionStep, error) {
+	return ExecutionStep{
+		StepNumber: ec.StepNumber,
+		NodeType:   "slow",
+		NodeID:     node.ID,
+		Status:     "completed",
+		Duration:   1000,
+		Output:     map[string]interface{}{"message": "slow operation"},
+	}, nil
+}
