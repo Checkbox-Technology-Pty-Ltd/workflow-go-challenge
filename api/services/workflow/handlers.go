@@ -158,3 +158,20 @@ func (h *EmailHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionStep,
 		Timestamp: timestamp,
 	}, nil
 }
+
+func evaluateCondition(temperature float64, operator string, threshold float64) bool {
+	switch operator {
+	case "greater_than":
+		return temperature > threshold
+	case "less_than":
+		return temperature < threshold
+	case "equals":
+		return temperature == threshold
+	case "greater_than_or_equal":
+		return temperature >= threshold
+	case "less_than_or_equal":
+		return temperature <= threshold
+	default:
+		return false
+	}
+}
