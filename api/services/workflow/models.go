@@ -133,6 +133,19 @@ type ExecutionResponse struct {
 	Steps         []ExecutionStep `json:"steps"`
 }
 
+// ExecutionSummary is a summary of an execution for the history list
+type ExecutionSummary struct {
+	ID         string `json:"id"`
+	WorkflowID string `json:"workflowId"`
+	Status     string `json:"status"`
+	ExecutedAt string `json:"executedAt"`
+}
+
+// ExecutionsListResponse is the response for GET /workflows/{id}/executions
+type ExecutionsListResponse struct {
+	Executions []ExecutionSummary `json:"executions"`
+}
+
 // ExecutionStep represents a single step in the execution trace
 type ExecutionStep struct {
 	StepNumber int            `json:"stepNumber"`

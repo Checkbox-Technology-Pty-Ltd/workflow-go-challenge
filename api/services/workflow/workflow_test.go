@@ -375,3 +375,111 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 		})
 	}
 }
+
+func TestHandleGetExecutions(t *testing.T) {
+	validID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+	execID := uuid.MustParse("660e8400-e29b-41d4-a716-446655440001")
+
+	tests := []struct {
+		name           string
+		workflowID     string
+		mockSetup      func(*MockRepository)
+		expectedStatus int
+		expectedBody   string
+		checkResponse  func(*testing.T, *ExecutionsListResponse)
+	}{
+		{
+			name:       "returns executions list",
+			workflowID: validID.String(),
+			mockSetup: func(m *MockRepository) {
+				m.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
+					return &Workflow{ID: validID}, nil
+				}
+				m.GetExecutionsByWorkflowIDFunc = func(ctx context.Context, workflowID uuid.UUID) ([]WorkflowExecution, error) {
+					return []WorkflowExecution{
+						{ID: execID, WorkflowID: &validID, Status: "completed"},
+					}, nil
+				}
+			},
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp *ExecutionsListResponse) {
+				if len(resp.Executions) != 1 {
+					t.Errorf("expected 1 execution, got %d", len(resp.Executions))
+				}
+				if resp.Executions[0].ID != execID.String() {
+					t.Errorf("expected execution ID %s, got %s", execID, resp.Executions[0].ID)
+				}
+			},
+		},
+		{
+			name:       "returns empty list when no executions",
+			workflowID: validID.String(),
+			mockSetup: func(m *MockRepository) {
+				m.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
+					return &Workflow{ID: validID}, nil
+				}
+				m.GetExecutionsByWorkflowIDFunc = func(ctx context.Context, workflowID uuid.UUID) ([]WorkflowExecution, error) {
+					return []WorkflowExecution{}, nil
+				}
+			},
+			expectedStatus: http.StatusOK,
+			checkResponse: func(t *testing.T, resp *ExecutionsListResponse) {
+				if len(resp.Executions) != 0 {
+					t.Errorf("expected 0 executions, got %d", len(resp.Executions))
+				}
+			},
+		},
+		{
+			name:           "invalid uuid returns 400",
+			workflowID:     "not-a-uuid",
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "invalid workflow id",
+		},
+		{
+			name:       "workflow not found returns 404",
+			workflowID: validID.String(),
+			mockSetup: func(m *MockRepository) {
+				m.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
+					return nil, pgx.ErrNoRows
+				}
+			},
+			expectedStatus: http.StatusNotFound,
+			expectedBody:   "workflow not found",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := &MockRepository{}
+			tt.mockSetup(mock)
+
+			svc := NewServiceWithDeps(mock, nil)
+
+			req := httptest.NewRequest(http.MethodGet, "/workflows/"+tt.workflowID+"/executions", nil)
+			req = mux.SetURLVars(req, map[string]string{"id": tt.workflowID})
+			rec := httptest.NewRecorder()
+
+			svc.HandleGetExecutions(rec, req)
+
+			if rec.Code != tt.expectedStatus {
+				t.Errorf("expected status %d, got %d", tt.expectedStatus, rec.Code)
+			}
+
+			if tt.expectedBody != "" {
+				body := rec.Body.String()
+				if body != tt.expectedBody+"\n" {
+					t.Errorf("expected body %q, got %q", tt.expectedBody, body)
+				}
+			}
+
+			if tt.checkResponse != nil && tt.expectedStatus == http.StatusOK {
+				var resp ExecutionsListResponse
+				if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+					t.Fatalf("failed to decode response: %v", err)
+				}
+				tt.checkResponse(t, &resp)
+			}
+		})
+	}
+}

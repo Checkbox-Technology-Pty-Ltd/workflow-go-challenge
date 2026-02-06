@@ -166,6 +166,56 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+func (s *Service) HandleGetExecutions(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	idStr := mux.Vars(r)["id"]
+	slog.Debug("Fetching executions", "workflow_id", idStr)
+
+	id, err := uuid.Parse(idStr)
+	if err != nil {
+		http.Error(w, "invalid workflow id", http.StatusBadRequest)
+		return
+	}
+
+	// Verify workflow exists
+	_, err = s.repo.GetWorkflow(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "workflow not found", http.StatusNotFound)
+			return
+		}
+		slog.Error("failed to get workflow", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	executions, err := s.repo.GetExecutionsByWorkflowID(ctx, id)
+	if err != nil {
+		slog.Error("failed to get executions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	summaries := make([]ExecutionSummary, len(executions))
+	for i, exec := range executions {
+		workflowID := ""
+		if exec.WorkflowID != nil {
+			workflowID = exec.WorkflowID.String()
+		}
+		summaries[i] = ExecutionSummary{
+			ID:         exec.ID.String(),
+			WorkflowID: workflowID,
+			Status:     exec.Status,
+			ExecutedAt: exec.ExecutedAt.Format(time.RFC3339),
+		}
+	}
+
+	response := ExecutionsListResponse{Executions: summaries}
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		slog.Error("failed to encode response", "error", err)
+	}
+}
+
 func (s *Service) getTemperature(ctx context.Context, city string) (float64, error) {
 	if s.weather == nil {
 		return getMockTemperature(city), nil
