@@ -16,7 +16,7 @@
         },
         "version": "1.0"
     },
-    "host": "localhost:8080",
+    "host": "localhost:8086",
     "basePath": "/api/v1",
     "paths": {
         "/api/v1/workflows/{id}": {

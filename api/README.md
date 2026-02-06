@@ -67,7 +67,7 @@ curl -X POST http://localhost:8086/api/v1/workflows/550e8400-e29b-41d4-a716-4466
 
 ## 📖 API Documentation
 
-Interactive Swagger UI is available at: **http://localhost:8080/swagger/index.html**
+Interactive Swagger UI is available at: **http://localhost:8086/swagger/index.html**
 
 To regenerate docs after modifying endpoints:
 ```bash

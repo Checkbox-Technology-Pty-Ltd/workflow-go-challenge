@@ -29,7 +29,7 @@ import (
 // @license.name MIT
 // @license.url https://opensource.org/licenses/MIT
 
-// @host localhost:8080
+// @host localhost:8086
 // @BasePath /api/v1
 
 // @schemes http
@@ -68,7 +68,9 @@ func main() {
 	workflowService.LoadRoutes(apiRouter)
 
 	// Swagger documentation endpoint
-	mainRouter.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
+	mainRouter.PathPrefix("/swagger/").Handler(httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+	))
 
 	corsHandler := handlers.CORS(
 		// Frontend URL

@@ -190,7 +190,7 @@ definitions:
           $ref: '#/definitions/workflow.NodeResponse'
         type: array
     type: object
-host: localhost:8080
+host: localhost:8086
 info:
   contact:
     name: API Support
