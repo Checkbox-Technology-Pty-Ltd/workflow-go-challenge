@@ -22,7 +22,7 @@ func (h *EndHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (en
 		NodeType:   "end",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   5,
+		Duration:   EndNodeDuration,
 		Output:     map[string]interface{}{"message": "Workflow completed"},
 		Timestamp:  time.Now().Format(time.RFC3339),
 	}, nil

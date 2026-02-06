@@ -46,7 +46,7 @@ func (h *ConditionHandler) Execute(ec *engine.ExecutionContext, node *engine.Nod
 		NodeType:   "condition",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   5,
+		Duration:   ConditionNodeDuration,
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Condition evaluated: temperature %.1f°C %s %.1f°C", temperature, metadata.Operator, metadata.Threshold),
 			"conditionResult": map[string]interface{}{

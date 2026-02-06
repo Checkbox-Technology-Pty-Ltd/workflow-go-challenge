@@ -47,7 +47,7 @@ func (h *WeatherHandler) Execute(ec *engine.ExecutionContext, node *engine.Node)
 		NodeType:   "integration",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   150,
+		Duration:   WeatherNodeDuration,
 		Output: map[string]interface{}{
 			"message": fmt.Sprintf("Fetched weather data for %s", city),
 			"apiResponse": map[string]interface{}{

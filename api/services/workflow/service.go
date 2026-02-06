@@ -13,6 +13,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// SupportedCityCoordinates maps city names to their latitude/longitude.
+// These are the cities supported for weather lookups.
+var SupportedCityCoordinates = map[string]struct{ Lat, Lon float64 }{
+	"Sydney":    {-33.8688, 151.2093},
+	"Melbourne": {-37.8136, 144.9631},
+	"Brisbane":  {-27.4698, 153.0251},
+	"Perth":     {-31.9505, 115.8605},
+	"Adelaide":  {-34.9285, 138.6007},
+}
+
 type Service struct {
 	repo     Repository
 	weather  weather.Client
@@ -72,17 +82,10 @@ func (s *Service) getTemperature(ctx context.Context, city string) (float64, err
 		return 0, fmt.Errorf("no weather client configured")
 	}
 
-	coords, ok := map[string]struct{ lat, lon float64 }{
-		"Sydney":    {-33.8688, 151.2093},
-		"Melbourne": {-37.8136, 144.9631},
-		"Brisbane":  {-27.4698, 153.0251},
-		"Perth":     {-31.9505, 115.8605},
-		"Adelaide":  {-34.9285, 138.6007},
-	}[city]
-
+	coords, ok := SupportedCityCoordinates[city]
 	if !ok {
-		return 0, fmt.Errorf("unknown city provided - %s", city)
+		return 0, fmt.Errorf("unsupported city: %s (supported: Sydney, Melbourne, Brisbane, Perth, Adelaide)", city)
 	}
 
-	return s.weather.GetCurrentTemperature(ctx, coords.lat, coords.lon)
+	return s.weather.GetCurrentTemperature(ctx, coords.Lat, coords.Lon)
 }

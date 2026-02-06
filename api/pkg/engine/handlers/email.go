@@ -39,7 +39,7 @@ func (h *EmailHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (
 	}
 
 	if metadata.Subject == "" {
-		metadata.Subject = "Weather Alert"
+		metadata.Subject = DefaultEmailSubject
 	}
 
 	// Build email body using user data
@@ -56,7 +56,7 @@ func (h *EmailHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (
 		NodeType:   "email",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   50,
+		Duration:   EmailNodeDuration,
 		Output: map[string]interface{}{
 			"message": "Alert email sent",
 			"emailContent": map[string]interface{}{

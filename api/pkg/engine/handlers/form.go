@@ -33,7 +33,7 @@ func (h *FormHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (e
 		NodeType:   "form",
 		NodeID:     node.ID,
 		Status:     "completed",
-		Duration:   15,
+		Duration:   FormNodeDuration,
 		Output: map[string]interface{}{
 			"message":  "User input collected",
 			"formData": formData,
