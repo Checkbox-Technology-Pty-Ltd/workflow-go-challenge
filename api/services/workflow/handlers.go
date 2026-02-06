@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -44,6 +45,14 @@ type FormHandler struct{}
 func (h *FormHandler) NodeType() string { return "form" }
 
 func (h *FormHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionStep, error) {
+	// Store form data in state for downstream handlers
+	if ec.State == nil {
+		ec.State = make(map[string]interface{})
+	}
+	ec.State["name"] = ec.FormData.Name
+	ec.State["email"] = ec.FormData.Email
+	ec.State["city"] = ec.FormData.City
+
 	formData := ec.FormData
 	return ExecutionStep{
 		StepNumber: ec.StepNumber,
@@ -66,9 +75,13 @@ type WeatherHandler struct {
 func (h *WeatherHandler) NodeType() string { return "integration" }
 
 func (h *WeatherHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionStep, error) {
+	// Read city from user input (FormData), not from node metadata
 	city := ec.FormData.City
-	temperature := 25.0 // default
+	if city == "" {
+		return ExecutionStep{}, fmt.Errorf("city not provided in form data")
+	}
 
+	temperature := 25.0 // default
 	if h.weatherFn != nil {
 		temp, err := h.weatherFn(ec.Ctx, city)
 		if err == nil {
@@ -76,8 +89,11 @@ func (h *WeatherHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionSte
 		}
 	}
 
-	// Store temperature in context for condition handler
-	ec.Temperature = temperature
+	// Store temperature in state for condition handler
+	if ec.State == nil {
+		ec.State = make(map[string]interface{})
+	}
+	ec.State["temperature"] = temperature
 
 	return ExecutionStep{
 		StepNumber: ec.StepNumber,
@@ -106,9 +122,28 @@ type ConditionHandler struct{}
 func (h *ConditionHandler) NodeType() string { return "condition" }
 
 func (h *ConditionHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionStep, error) {
-	temperature := ec.Temperature
-	operator := ec.FormData.Operator
-	threshold := ec.FormData.Threshold
+	var metadata map[string]interface{}
+	if len(node.Metadata) > 0 {
+		if err := json.Unmarshal(node.Metadata, &metadata); err != nil {
+			return ExecutionStep{}, fmt.Errorf("failed to unmarshal node metadata: %w", err)
+		}
+	}
+
+	temp, ok := ec.State["temperature"].(float64)
+	if !ok {
+		return ExecutionStep{}, fmt.Errorf("temperature not found in execution context state")
+	}
+	temperature := temp
+
+	operator, ok := metadata["operator"].(string)
+	if !ok {
+		return ExecutionStep{}, fmt.Errorf("operator not found or is not a string in node metadata")
+	}
+
+	threshold, ok := metadata["threshold"].(float64)
+	if !ok {
+		return ExecutionStep{}, fmt.Errorf("threshold not found or is not a float64 in node metadata")
+	}
 
 	result := evaluateCondition(temperature, operator, threshold)
 
@@ -137,8 +172,32 @@ type EmailHandler struct{}
 func (h *EmailHandler) NodeType() string { return "email" }
 
 func (h *EmailHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionStep, error) {
-	formData := ec.FormData
-	temperature := ec.Temperature
+	// Read recipient from user input (FormData)
+	to := ec.FormData.Email
+	if to == "" {
+		return ExecutionStep{}, fmt.Errorf("recipient email not provided in form data")
+	}
+
+	// Read subject and template from node metadata (workflow config)
+	var metadata map[string]interface{}
+	if len(node.Metadata) > 0 {
+		if err := json.Unmarshal(node.Metadata, &metadata); err != nil {
+			return ExecutionStep{}, fmt.Errorf("failed to unmarshal node metadata: %w", err)
+		}
+	}
+
+	subject, ok := metadata["subject"].(string)
+	if !ok {
+		subject = "Weather Alert" // Default subject
+	}
+
+	// Build email body using user's name, city, and temperature
+	name := ec.FormData.Name
+	city := ec.FormData.City
+	temperature, _ := ec.State["temperature"].(float64)
+
+	body := fmt.Sprintf("Hi %s, weather alert for %s! Temperature is %.1f°C!", name, city, temperature)
+
 	timestamp := time.Now().Format(time.RFC3339)
 
 	return ExecutionStep{
@@ -149,9 +208,9 @@ func (h *EmailHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionStep,
 		Output: StepOutput{
 			Message: "Alert email sent",
 			EmailContent: &EmailContent{
-				To:        formData.Email,
-				Subject:   "Weather Alert",
-				Body:      fmt.Sprintf("Hi %s, weather alert for %s! Temperature is %.1f°C!", formData.Name, formData.City, temperature),
+				To:        to,
+				Subject:   subject,
+				Body:      body,
 				Timestamp: timestamp,
 			},
 		},

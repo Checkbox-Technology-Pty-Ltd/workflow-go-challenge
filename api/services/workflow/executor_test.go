@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -149,12 +150,14 @@ func TestExecutor_Execute(t *testing.T) {
 		trueHandle := "true"
 		falseHandle := "false"
 
+		// Node metadata contains workflow config (operator, threshold, subject)
+		// FormData contains user input (name, email, city)
 		nodes := []Node{
 			{WorkflowID: workflowID, NodeID: "start-1", NodeType: "start"},
 			{WorkflowID: workflowID, NodeID: "form-1", NodeType: "form"},
 			{WorkflowID: workflowID, NodeID: "weather-1", NodeType: "integration"},
-			{WorkflowID: workflowID, NodeID: "condition-1", NodeType: "condition"},
-			{WorkflowID: workflowID, NodeID: "email-1", NodeType: "email"},
+			{WorkflowID: workflowID, NodeID: "condition-1", NodeType: "condition", Metadata: json.RawMessage(`{"operator": "greater_than", "threshold": 25.0}`)},
+			{WorkflowID: workflowID, NodeID: "email-1", NodeType: "email", Metadata: json.RawMessage(`{"subject": "Weather Alert"}`)},
 			{WorkflowID: workflowID, NodeID: "end-1", NodeType: "end"},
 		}
 		edges := []Edge{
@@ -175,12 +178,11 @@ func TestExecutor_Execute(t *testing.T) {
 		registry := DefaultRegistry(weatherFn)
 		executor := NewExecutor(registry)
 
+		// User input via FormData
 		formData := FormData{
-			Name:      "Alice",
-			Email:     "alice@example.com",
-			City:      "Sydney",
-			Operator:  "greater_than",
-			Threshold: 25.0,
+			Name:  "Alice",
+			Email: "alice@example.com",
+			City:  "Sydney",
 		}
 
 		steps, err := executor.Execute(context.Background(), graph, formData)
@@ -212,8 +214,8 @@ func TestExecutor_Execute(t *testing.T) {
 			{WorkflowID: workflowID, NodeID: "start-1", NodeType: "start"},
 			{WorkflowID: workflowID, NodeID: "form-1", NodeType: "form"},
 			{WorkflowID: workflowID, NodeID: "weather-1", NodeType: "integration"},
-			{WorkflowID: workflowID, NodeID: "condition-1", NodeType: "condition"},
-			{WorkflowID: workflowID, NodeID: "email-1", NodeType: "email"},
+			{WorkflowID: workflowID, NodeID: "condition-1", NodeType: "condition", Metadata: json.RawMessage(`{"operator": "greater_than", "threshold": 25.0}`)},
+			{WorkflowID: workflowID, NodeID: "email-1", NodeType: "email", Metadata: json.RawMessage(`{"subject": "Weather Alert"}`)},
 			{WorkflowID: workflowID, NodeID: "end-1", NodeType: "end"},
 		}
 		edges := []Edge{
@@ -234,12 +236,11 @@ func TestExecutor_Execute(t *testing.T) {
 		registry := DefaultRegistry(weatherFn)
 		executor := NewExecutor(registry)
 
+		// User input via FormData
 		formData := FormData{
-			Name:      "Bob",
-			Email:     "bob@example.com",
-			City:      "Melbourne",
-			Operator:  "greater_than",
-			Threshold: 25.0,
+			Name:  "Bob",
+			Email: "bob@example.com",
+			City:  "Melbourne",
 		}
 
 		steps, err := executor.Execute(context.Background(), graph, formData)

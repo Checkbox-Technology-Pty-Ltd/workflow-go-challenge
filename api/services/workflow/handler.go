@@ -7,11 +7,11 @@ import (
 
 // ExecutionContext holds state that is passed between node handlers during execution
 type ExecutionContext struct {
-	Ctx         context.Context
-	FormData    FormData
-	Temperature float64
-	StartTime   time.Time
-	StepNumber  int
+	Ctx        context.Context
+	FormData   FormData
+	State      map[string]interface{}
+	StartTime  time.Time
+	StepNumber int
 }
 
 // NodeHandler defines the interface for handling different node types

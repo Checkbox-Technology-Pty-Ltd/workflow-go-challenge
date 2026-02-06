@@ -14,6 +14,16 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// MockWeatherClient implements the weather.Client interface for testing
+type MockWeatherClient struct {
+	temp float64
+	err  error
+}
+
+func (m *MockWeatherClient) GetCurrentTemperature(ctx context.Context, lat, lon float64) (float64, error) {
+	return m.temp, m.err
+}
+
 func TestHandleGetWorkflow(t *testing.T) {
 	validID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 	label := "Start"
@@ -141,13 +151,15 @@ func TestHandleGetWorkflow(t *testing.T) {
 }
 
 // mockWorkflowNodes returns a complete set of workflow nodes for testing
+// Note: city, email recipient come from FormData (user input)
+// operator, threshold, subject come from node metadata (workflow config)
 func mockWorkflowNodes(workflowID uuid.UUID) []Node {
 	return []Node{
 		{WorkflowID: workflowID, NodeID: "start-1", NodeType: "start"},
 		{WorkflowID: workflowID, NodeID: "form-1", NodeType: "form"},
 		{WorkflowID: workflowID, NodeID: "weather-1", NodeType: "integration"},
-		{WorkflowID: workflowID, NodeID: "condition-1", NodeType: "condition"},
-		{WorkflowID: workflowID, NodeID: "email-1", NodeType: "email"},
+		{WorkflowID: workflowID, NodeID: "condition-1", NodeType: "condition", Metadata: json.RawMessage(`{"operator": "greater_than", "threshold": 25.0}`)},
+		{WorkflowID: workflowID, NodeID: "email-1", NodeType: "email", Metadata: json.RawMessage(`{"subject": "Weather Alert"}`)},
 		{WorkflowID: workflowID, NodeID: "end-1", NodeType: "end"},
 	}
 }
@@ -186,13 +198,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 		"formData": {
 			"name": "Alice",
 			"email": "alice@example.com",
-			"city": "Sydney",
-			"operator": "greater_than",
-			"threshold": 25
-		},
-		"condition": {
-			"operator": "greater_than",
-			"threshold": 25
+			"city": "Sydney"
 		}
 	}`
 
@@ -210,7 +216,18 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 			workflowID:  validID.String(),
 			requestBody: validRequestBody,
 			mockSetup: func(m *MockRepository) {
-				setupFullWorkflowMock(m, validID)
+				m.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
+					return &Workflow{ID: validID}, nil
+				}
+				m.GetNodesByWorkflowIDFunc = func(ctx context.Context, id uuid.UUID) ([]Node, error) {
+					return mockWorkflowNodes(id), nil
+				}
+				m.GetEdgesByWorkflowIDFunc = func(ctx context.Context, id uuid.UUID) ([]Edge, error) {
+					return mockWorkflowEdges(id), nil
+				}
+				m.CreateExecutionFunc = func(ctx context.Context, exec *WorkflowExecution) error {
+					return nil
+				}
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *ExecutionResponse) {
@@ -269,17 +286,29 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 				"formData": {
 					"name": "Bob",
 					"email": "bob@example.com",
-					"city": "Melbourne",
-					"operator": "greater_than",
-					"threshold": 30
-				},
-				"condition": {
-					"operator": "greater_than",
-					"threshold": 30
+					"city": "Melbourne"
 				}
 			}`,
 			mockSetup: func(m *MockRepository) {
-				setupFullWorkflowMock(m, validID)
+				m.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
+					return &Workflow{ID: validID}, nil
+				}
+				m.GetNodesByWorkflowIDFunc = func(ctx context.Context, id uuid.UUID) ([]Node, error) {
+					return []Node{
+						{WorkflowID: id, NodeID: "start-1", NodeType: "start"},
+						{WorkflowID: id, NodeID: "form-1", NodeType: "form"},
+						{WorkflowID: id, NodeID: "weather-1", NodeType: "integration", Metadata: json.RawMessage(`{"city": "Melbourne"}`)},
+						{WorkflowID: id, NodeID: "condition-1", NodeType: "condition", Metadata: json.RawMessage(`{"operator": "greater_than", "threshold": 30.0}`)},
+						{WorkflowID: id, NodeID: "email-1", NodeType: "email", Metadata: json.RawMessage(`{"to": "bob@example.com", "subject": "Weather Alert", "body_template": "Weather in Melbourne is %.1fC!"}`)},
+						{WorkflowID: id, NodeID: "end-1", NodeType: "end"},
+					}, nil
+				}
+				m.GetEdgesByWorkflowIDFunc = func(ctx context.Context, id uuid.UUID) ([]Edge, error) {
+					return mockWorkflowEdges(id), nil
+				}
+				m.CreateExecutionFunc = func(ctx context.Context, exec *WorkflowExecution) error {
+					return nil
+				}
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *ExecutionResponse) {
@@ -299,14 +328,24 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 	// Test that execution is persisted
 	t.Run("execution is persisted to database", func(t *testing.T) {
 		var savedExec *WorkflowExecution
-		mock := &MockRepository{}
-		setupFullWorkflowMock(mock, validID)
-		mock.CreateExecutionFunc = func(ctx context.Context, exec *WorkflowExecution) error {
+		mockRepo := &MockRepository{}
+		
+		mockRepo.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
+			return &Workflow{ID: validID}, nil
+		}
+		mockRepo.GetNodesByWorkflowIDFunc = func(ctx context.Context, id uuid.UUID) ([]Node, error) {
+			return mockWorkflowNodes(id), nil
+		}
+		mockRepo.GetEdgesByWorkflowIDFunc = func(ctx context.Context, id uuid.UUID) ([]Edge, error) {
+			return mockWorkflowEdges(id), nil
+		}
+		mockRepo.CreateExecutionFunc = func(ctx context.Context, exec *WorkflowExecution) error {
 			savedExec = exec
 			return nil
 		}
 
-		svc := NewServiceWithDeps(mock, nil)
+
+		svc := NewServiceWithDeps(mockRepo, &MockWeatherClient{temp: 30.0})
 
 		req := httptest.NewRequest(http.MethodPost, "/workflows/"+validID.String()+"/execute", strings.NewReader(validRequestBody))
 		req.Header.Set("Content-Type", "application/json")
@@ -342,10 +381,10 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mock := &MockRepository{}
-			tt.mockSetup(mock)
+			mockRepo := &MockRepository{}
+			tt.mockSetup(mockRepo)
 
-			svc := NewServiceWithDeps(mock, nil)
+			svc := NewServiceWithDeps(mockRepo, &MockWeatherClient{temp: 30.0})
 
 			req := httptest.NewRequest(http.MethodPost, "/workflows/"+tt.workflowID+"/execute", strings.NewReader(tt.requestBody))
 			req.Header.Set("Content-Type", "application/json")
@@ -451,10 +490,10 @@ func TestHandleGetExecutions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mock := &MockRepository{}
-			tt.mockSetup(mock)
+			mockRepo := &MockRepository{}
+			tt.mockSetup(mockRepo)
 
-			svc := NewServiceWithDeps(mock, nil)
+			svc := NewServiceWithDeps(mockRepo, nil)
 
 			req := httptest.NewRequest(http.MethodGet, "/workflows/"+tt.workflowID+"/executions", nil)
 			req = mux.SetURLVars(req, map[string]string{"id": tt.workflowID})
