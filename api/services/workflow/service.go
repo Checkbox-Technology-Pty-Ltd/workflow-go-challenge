@@ -3,17 +3,25 @@ package workflow
 import (
 	"net/http"
 
+	"workflow-code-test/api/pkg/weather"
+
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type Service struct {
-	repo Repository
+	repo    Repository
+	weather weather.Client
 }
 
 func NewService(pool *pgxpool.Pool) (*Service, error) {
 	repo := NewRepository(pool)
-	return &Service{repo: repo}, nil
+	weatherClient := weather.NewOpenMeteoClient()
+	return &Service{repo: repo, weather: weatherClient}, nil
+}
+
+func NewServiceWithDeps(repo Repository, weatherClient weather.Client) *Service {
+	return &Service{repo: repo, weather: weatherClient}
 }
 
 // jsonMiddleware sets the Content-Type header to application/json

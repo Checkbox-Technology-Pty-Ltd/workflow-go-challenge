@@ -1,6 +1,7 @@
 package workflow
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -101,8 +102,13 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	startTime := time.Now()
 	executionID := uuid.New()
 
-	// Mock temperature based on city (simulating API call)
-	temperature := getMockTemperature(req.FormData.City)
+	// Fetch temperature from weather API
+	temperature, err := s.getTemperature(ctx, req.FormData.City)
+	if err != nil {
+		slog.Error("failed to get temperature", "error", err, "city", req.FormData.City)
+		// Fall back to mock temperature if API fails
+		temperature = getMockTemperature(req.FormData.City)
+	}
 
 	// Evaluate condition
 	conditionMet := evaluateCondition(temperature, req.Condition.Operator, req.Condition.Threshold)
@@ -141,6 +147,26 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	if err := json.NewEncoder(w).Encode(response); err != nil {
 		slog.Error("failed to encode response", "error", err)
 	}
+}
+
+func (s *Service) getTemperature(ctx context.Context, city string) (float64, error) {
+	if s.weather == nil {
+		return getMockTemperature(city), nil
+	}
+
+	coords, ok := map[string]struct{ lat, lon float64 }{
+		"Sydney":    {-33.8688, 151.2093},
+		"Melbourne": {-37.8136, 144.9631},
+		"Brisbane":  {-27.4698, 153.0251},
+		"Perth":     {-31.9505, 115.8605},
+		"Adelaide":  {-34.9285, 138.6007},
+	}[city]
+
+	if !ok {
+		return 25.0, nil // Default for unknown cities
+	}
+
+	return s.weather.GetCurrentTemperature(ctx, coords.lat, coords.lon)
 }
 
 func getMockTemperature(city string) float64 {
