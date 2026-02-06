@@ -140,6 +140,45 @@ func TestHandleGetWorkflow(t *testing.T) {
 	}
 }
 
+// mockWorkflowNodes returns a complete set of workflow nodes for testing
+func mockWorkflowNodes(workflowID uuid.UUID) []Node {
+	return []Node{
+		{WorkflowID: workflowID, NodeID: "start-1", NodeType: "start"},
+		{WorkflowID: workflowID, NodeID: "form-1", NodeType: "form"},
+		{WorkflowID: workflowID, NodeID: "weather-1", NodeType: "integration"},
+		{WorkflowID: workflowID, NodeID: "condition-1", NodeType: "condition"},
+		{WorkflowID: workflowID, NodeID: "email-1", NodeType: "email"},
+		{WorkflowID: workflowID, NodeID: "end-1", NodeType: "end"},
+	}
+}
+
+// mockWorkflowEdges returns edges that connect the workflow nodes
+func mockWorkflowEdges(workflowID uuid.UUID) []Edge {
+	trueHandle := "true"
+	falseHandle := "false"
+	return []Edge{
+		{WorkflowID: workflowID, EdgeID: "e1", SourceID: "start-1", TargetID: "form-1"},
+		{WorkflowID: workflowID, EdgeID: "e2", SourceID: "form-1", TargetID: "weather-1"},
+		{WorkflowID: workflowID, EdgeID: "e3", SourceID: "weather-1", TargetID: "condition-1"},
+		{WorkflowID: workflowID, EdgeID: "e4", SourceID: "condition-1", TargetID: "email-1", SourceHandle: &trueHandle},
+		{WorkflowID: workflowID, EdgeID: "e5", SourceID: "condition-1", TargetID: "end-1", SourceHandle: &falseHandle},
+		{WorkflowID: workflowID, EdgeID: "e6", SourceID: "email-1", TargetID: "end-1"},
+	}
+}
+
+// setupFullWorkflowMock configures a mock repository with complete workflow data
+func setupFullWorkflowMock(m *MockRepository, workflowID uuid.UUID) {
+	m.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
+		return &Workflow{ID: workflowID, Name: "Test Workflow"}, nil
+	}
+	m.GetNodesByWorkflowIDFunc = func(ctx context.Context, id uuid.UUID) ([]Node, error) {
+		return mockWorkflowNodes(workflowID), nil
+	}
+	m.GetEdgesByWorkflowIDFunc = func(ctx context.Context, id uuid.UUID) ([]Edge, error) {
+		return mockWorkflowEdges(workflowID), nil
+	}
+}
+
 func TestHandleExecuteWorkflow(t *testing.T) {
 	validID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 
@@ -171,9 +210,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 			workflowID:  validID.String(),
 			requestBody: validRequestBody,
 			mockSetup: func(m *MockRepository) {
-				m.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
-					return &Workflow{ID: validID, Name: "Test Workflow"}, nil
-				}
+				setupFullWorkflowMock(m, validID)
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *ExecutionResponse) {
@@ -242,9 +279,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 				}
 			}`,
 			mockSetup: func(m *MockRepository) {
-				m.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
-					return &Workflow{ID: validID, Name: "Test Workflow"}, nil
-				}
+				setupFullWorkflowMock(m, validID)
 			},
 			expectedStatus: http.StatusOK,
 			checkResponse: func(t *testing.T, resp *ExecutionResponse) {
@@ -264,17 +299,14 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 	// Test that execution is persisted
 	t.Run("execution is persisted to database", func(t *testing.T) {
 		var savedExec *WorkflowExecution
-		mock := &MockRepository{
-			GetWorkflowFunc: func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
-				return &Workflow{ID: validID, Name: "Test Workflow"}, nil
-			},
-			CreateExecutionFunc: func(ctx context.Context, exec *WorkflowExecution) error {
-				savedExec = exec
-				return nil
-			},
+		mock := &MockRepository{}
+		setupFullWorkflowMock(mock, validID)
+		mock.CreateExecutionFunc = func(ctx context.Context, exec *WorkflowExecution) error {
+			savedExec = exec
+			return nil
 		}
 
-		svc := &Service{repo: mock}
+		svc := NewServiceWithDeps(mock, nil)
 
 		req := httptest.NewRequest(http.MethodPost, "/workflows/"+validID.String()+"/execute", strings.NewReader(validRequestBody))
 		req.Header.Set("Content-Type", "application/json")
@@ -284,7 +316,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 		svc.HandleExecuteWorkflow(rec, req)
 
 		if rec.Code != http.StatusOK {
-			t.Fatalf("expected status 200, got %d", rec.Code)
+			t.Fatalf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
 		}
 
 		if savedExec == nil {
@@ -313,7 +345,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 			mock := &MockRepository{}
 			tt.mockSetup(mock)
 
-			svc := &Service{repo: mock}
+			svc := NewServiceWithDeps(mock, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/workflows/"+tt.workflowID+"/execute", strings.NewReader(tt.requestBody))
 			req.Header.Set("Content-Type", "application/json")

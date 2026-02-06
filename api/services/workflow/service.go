@@ -10,18 +10,27 @@ import (
 )
 
 type Service struct {
-	repo    Repository
-	weather weather.Client
+	repo     Repository
+	weather  weather.Client
+	executor *Executor
 }
 
 func NewService(pool *pgxpool.Pool) (*Service, error) {
 	repo := NewRepository(pool)
 	weatherClient := weather.NewOpenMeteoClient()
-	return &Service{repo: repo, weather: weatherClient}, nil
+
+	svc := &Service{repo: repo, weather: weatherClient}
+	registry := DefaultRegistry(svc.getTemperature)
+	svc.executor = NewExecutor(registry)
+
+	return svc, nil
 }
 
 func NewServiceWithDeps(repo Repository, weatherClient weather.Client) *Service {
-	return &Service{repo: repo, weather: weatherClient}
+	svc := &Service{repo: repo, weather: weatherClient}
+	registry := DefaultRegistry(svc.getTemperature)
+	svc.executor = NewExecutor(registry)
+	return svc
 }
 
 // jsonMiddleware sets the Content-Type header to application/json

@@ -99,24 +99,41 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Fetch nodes and edges for graph construction
+	nodes, err := s.repo.GetNodesByWorkflowID(ctx, id)
+	if err != nil {
+		slog.Error("failed to get nodes", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	edges, err := s.repo.GetEdgesByWorkflowID(ctx, id)
+	if err != nil {
+		slog.Error("failed to get edges", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Build workflow graph
+	graph, err := BuildGraph(nodes, edges)
+	if err != nil {
+		slog.Error("failed to build graph", "error", err)
+		http.Error(w, "invalid workflow structure", http.StatusBadRequest)
+		return
+	}
+
 	startTime := time.Now()
 	executionID := uuid.New()
 
-	// Fetch temperature from weather API
-	temperature, err := s.getTemperature(ctx, req.FormData.City)
+	// Execute workflow using graph traversal
+	steps, err := s.executor.Execute(ctx, graph, req.FormData)
 	if err != nil {
-		slog.Error("failed to get temperature", "error", err, "city", req.FormData.City)
-		// Fall back to mock temperature if API fails
-		temperature = getMockTemperature(req.FormData.City)
+		slog.Error("workflow execution failed", "error", err)
+		// Continue with partial results if we have any steps
 	}
-
-	// Evaluate condition
-	conditionMet := evaluateCondition(temperature, req.Condition.Operator, req.Condition.Threshold)
 
 	endTime := time.Now()
 	duration := endTime.Sub(startTime).Milliseconds()
-
-	steps := buildExecutionSteps(req.FormData, temperature, conditionMet, startTime)
 
 	response := ExecutionResponse{
 		ExecutionID:   executionID.String(),
