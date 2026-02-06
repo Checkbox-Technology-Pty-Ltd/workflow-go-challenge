@@ -4,6 +4,8 @@ import (
 	"context"
 	"net/http"
 
+	"workflow-code-test/api/pkg/engine"
+	"workflow-code-test/api/pkg/engine/handlers"
 	"workflow-code-test/api/pkg/weather"
 
 	"github.com/gorilla/mux"
@@ -13,7 +15,7 @@ import (
 type Service struct {
 	repo     Repository
 	weather  weather.Client
-	executor *Executor
+	executor *engine.Executor
 }
 
 func NewService(pool *pgxpool.Pool) (*Service, error) {
@@ -21,17 +23,29 @@ func NewService(pool *pgxpool.Pool) (*Service, error) {
 	weatherClient := weather.NewOpenMeteoClient()
 
 	svc := &Service{repo: repo, weather: weatherClient}
-	registry := DefaultRegistry(svc.getTemperature)
-	svc.executor = NewExecutor(registry)
+	registry := svc.createRegistry()
+	svc.executor = engine.NewExecutor(registry)
 
 	return svc, nil
 }
 
 func NewServiceWithDeps(repo Repository, weatherClient weather.Client) *Service {
 	svc := &Service{repo: repo, weather: weatherClient}
-	registry := DefaultRegistry(svc.getTemperature)
-	svc.executor = NewExecutor(registry)
+	registry := svc.createRegistry()
+	svc.executor = engine.NewExecutor(registry)
 	return svc
+}
+
+// createRegistry creates a handler registry with all standard handlers
+func (s *Service) createRegistry() *engine.Registry {
+	registry := engine.NewRegistry()
+	registry.Register(handlers.NewStartHandler())
+	registry.Register(handlers.NewEndHandler())
+	registry.Register(handlers.NewFormHandler())
+	registry.Register(handlers.NewWeatherHandler(s.getTemperature))
+	registry.Register(handlers.NewConditionHandler())
+	registry.Register(handlers.NewEmailHandler())
+	return registry
 }
 
 // jsonMiddleware sets the Content-Type header to application/json
