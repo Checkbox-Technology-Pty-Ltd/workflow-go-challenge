@@ -143,17 +143,9 @@ func TestWeatherHandler(t *testing.T) {
 		ec.Set("form.city", "Sydney")
 
 		node := &engine.Node{ID: "weather-1", Type: "integration"}
-		step, err := handler.Execute(ec, node)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		// Should fall back to default temperature
-		if ec.GetFloat("weather.temperature") != 25.0 {
-			t.Errorf("expected default temperature 25.0, got %v", ec.GetFloat("weather.temperature"))
-		}
-		if step.Status != "completed" {
-			t.Errorf("expected status 'completed', got %q", step.Status)
+		_, err := handler.Execute(ec, node)
+		if err == nil {
+			t.Fatal("expected error when weather API fails")
 		}
 	})
 
@@ -166,12 +158,8 @@ func TestWeatherHandler(t *testing.T) {
 
 		node := &engine.Node{ID: "weather-1", Type: "integration"}
 		_, err := handler.Execute(ec, node)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if ec.GetFloat("weather.temperature") != 25.0 {
-			t.Errorf("expected default temperature 25.0, got %v", ec.GetFloat("weather.temperature"))
+		if err == nil {
+			t.Fatal("expected error when weather client not configured")
 		}
 	})
 

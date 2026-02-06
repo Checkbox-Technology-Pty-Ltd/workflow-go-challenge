@@ -30,13 +30,13 @@ func (h *WeatherHandler) Execute(ec *engine.ExecutionContext, node *engine.Node)
 		return engine.ExecutionStep{}, fmt.Errorf("city not provided in form data")
 	}
 
-	temperature := 25.0 // default
-	if h.weatherFn != nil {
-		temp, err := h.weatherFn(ec.Ctx, city)
-		if err == nil {
-			temperature = temp
-		}
-		// On error, we fall back to default temperature
+	if h.weatherFn == nil {
+		return engine.ExecutionStep{}, fmt.Errorf("weather client not configured")
+	}
+
+	temperature, err := h.weatherFn(ec.Ctx, city)
+	if err != nil {
+		return engine.ExecutionStep{}, fmt.Errorf("failed to fetch weather for %s: %w", city, err)
 	}
 
 	// Store temperature in state for downstream handlers

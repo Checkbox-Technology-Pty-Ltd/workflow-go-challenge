@@ -2,6 +2,7 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"workflow-code-test/api/pkg/engine"
@@ -68,7 +69,7 @@ func (s *Service) LoadRoutes(parentRouter *mux.Router) {
 
 func (s *Service) getTemperature(ctx context.Context, city string) (float64, error) {
 	if s.weather == nil {
-		return s.getMockTemperature(city), nil // Call the service's mock method
+		return 0, fmt.Errorf("no weather client configured")
 	}
 
 	coords, ok := map[string]struct{ lat, lon float64 }{
@@ -80,22 +81,8 @@ func (s *Service) getTemperature(ctx context.Context, city string) (float64, err
 	}[city]
 
 	if !ok {
-		return 25.0, nil // Default for unknown cities
+		return 0, fmt.Errorf("unknown city provided - %s", city)
 	}
 
 	return s.weather.GetCurrentTemperature(ctx, coords.lat, coords.lon)
-}
-
-func (s *Service) getMockTemperature(city string) float64 {
-	temperatures := map[string]float64{
-		"Sydney":    28.5,
-		"Melbourne": 22.3,
-		"Brisbane":  31.2,
-		"Perth":     35.1,
-		"Adelaide":  26.8,
-	}
-	if temp, ok := temperatures[city]; ok {
-		return temp
-	}
-	return 25.0
 }
