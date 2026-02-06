@@ -3,8 +3,10 @@ package workflow
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"time"
 
 	"workflow-code-test/api/pkg/engine"
@@ -13,6 +15,9 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5"
 )
+
+// emailRegex is a basic email format validation pattern
+var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 
 // HandleGetWorkflow godoc
 // @Summary Get workflow definition
@@ -118,8 +123,16 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "email is required", http.StatusBadRequest)
 		return
 	}
+	if !emailRegex.MatchString(req.FormData.Email) {
+		http.Error(w, "invalid email format", http.StatusBadRequest)
+		return
+	}
 	if req.FormData.City == "" {
 		http.Error(w, "city is required", http.StatusBadRequest)
+		return
+	}
+	if !IsSupportedCity(req.FormData.City) {
+		http.Error(w, fmt.Sprintf("unsupported city: %s (supported: Sydney, Melbourne, Brisbane, Perth, Adelaide)", req.FormData.City), http.StatusBadRequest)
 		return
 	}
 
@@ -193,13 +206,15 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	finalContext, err := json.Marshal(req.FormData)
 	if err != nil {
 		slog.Error("failed to marshal final context", "error", err)
-		// Not returning error to client, but logging it
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	executionTrace, err := json.Marshal(steps)
 	if err != nil {
 		slog.Error("failed to marshal execution trace", "error", err)
-		// Not returning error to client, but logging it
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	exec := &WorkflowExecution{
@@ -212,7 +227,8 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 
 	if err := s.repo.CreateExecution(ctx, exec); err != nil {
 		slog.Error("failed to save execution", "error", err)
-		// Continue returning response even if persistence fails
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
 	}
 
 	if err := json.NewEncoder(w).Encode(response); err != nil {

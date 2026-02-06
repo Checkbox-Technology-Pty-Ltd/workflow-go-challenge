@@ -1,6 +1,9 @@
 package engine
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sync"
+)
 
 // Node represents a node in a workflow graph.
 // This is a generic representation that handlers can use.
@@ -33,8 +36,10 @@ type NodeHandler interface {
 	Execute(ec *ExecutionContext, node *Node) (ExecutionStep, error)
 }
 
-// Registry maps node types to their handlers
+// Registry maps node types to their handlers.
+// It is safe for concurrent use.
 type Registry struct {
+	mu       sync.RWMutex
 	handlers map[string]NodeHandler
 }
 
@@ -48,17 +53,23 @@ func NewRegistry() *Registry {
 // Register adds a handler for a specific node type.
 // If a handler for this type already exists, it will be replaced.
 func (r *Registry) Register(handler NodeHandler) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.handlers[handler.NodeType()] = handler
 }
 
 // Get returns the handler for a given node type
 func (r *Registry) Get(nodeType string) (NodeHandler, bool) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	h, ok := r.handlers[nodeType]
 	return h, ok
 }
 
 // NodeTypes returns all registered node types
 func (r *Registry) NodeTypes() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	types := make([]string, 0, len(r.handlers))
 	for t := range r.handlers {
 		types = append(types, t)
