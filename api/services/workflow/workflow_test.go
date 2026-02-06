@@ -256,6 +256,22 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 			expectedBody:   "invalid request body",
 		},
 		{
+			name:           "missing email returns 400",
+			workflowID:     validID.String(),
+			requestBody:    `{"formData": {"name": "Alice", "city": "Sydney"}}`,
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "email is required",
+		},
+		{
+			name:           "missing city returns 400",
+			workflowID:     validID.String(),
+			requestBody:    `{"formData": {"name": "Alice", "email": "alice@example.com"}}`,
+			mockSetup:      func(m *MockRepository) {},
+			expectedStatus: http.StatusBadRequest,
+			expectedBody:   "city is required",
+		},
+		{
 			name:        "workflow not found returns 404",
 			workflowID:  validID.String(),
 			requestBody: validRequestBody,

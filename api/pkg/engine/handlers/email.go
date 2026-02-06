@@ -33,7 +33,9 @@ func (h *EmailHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (
 	}
 
 	if len(node.Metadata) > 0 {
-		json.Unmarshal(node.Metadata, &metadata)
+		if err := json.Unmarshal(node.Metadata, &metadata); err != nil {
+			return engine.ExecutionStep{}, fmt.Errorf("failed to parse email node metadata: %w", err)
+		}
 	}
 
 	if metadata.Subject == "" {

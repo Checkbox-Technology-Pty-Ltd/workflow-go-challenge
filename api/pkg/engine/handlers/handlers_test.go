@@ -326,6 +326,26 @@ func TestEmailHandler(t *testing.T) {
 			t.Error("expected error when email is missing")
 		}
 	})
+
+	t.Run("invalid metadata returns error", func(t *testing.T) {
+		node := &engine.Node{
+			ID:       "email-1",
+			Type:     "email",
+			Metadata: []byte(`{invalid json`),
+		}
+
+		ec := engine.NewExecutionContext(context.Background())
+		ec.StepNumber = 5
+		ec.Set("form.name", "Alice")
+		ec.Set("form.email", "alice@example.com")
+		ec.Set("form.city", "Sydney")
+		ec.Set("weather.temperature", 30.0)
+
+		_, err := handler.Execute(ec, node)
+		if err == nil {
+			t.Error("expected error when metadata is invalid JSON")
+		}
+	})
 }
 
 func TestRegistry(t *testing.T) {

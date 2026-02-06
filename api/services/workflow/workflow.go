@@ -88,6 +88,16 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Validate required form data fields
+	if req.FormData.Email == "" {
+		http.Error(w, "email is required", http.StatusBadRequest)
+		return
+	}
+	if req.FormData.City == "" {
+		http.Error(w, "city is required", http.StatusBadRequest)
+		return
+	}
+
 	_, err = s.repo.GetWorkflow(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
