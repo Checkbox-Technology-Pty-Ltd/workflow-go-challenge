@@ -82,7 +82,7 @@ type NodePosition struct {
 type NodeDataResponse struct {
 	Label       string          `json:"label,omitempty"`
 	Description string          `json:"description,omitempty"`
-	Metadata    json.RawMessage `json:"metadata,omitempty"`
+	Metadata    json.RawMessage `json:"metadata,omitempty" swaggertype:"object"`
 }
 
 // EdgeResponse represents an edge in the API response
@@ -93,9 +93,9 @@ type EdgeResponse struct {
 	Type         string          `json:"type"`
 	SourceHandle string          `json:"sourceHandle,omitempty"`
 	Animated     bool            `json:"animated"`
-	Style        json.RawMessage `json:"style,omitempty"`
+	Style        json.RawMessage `json:"style,omitempty" swaggertype:"object"`
 	Label        string          `json:"label,omitempty"`
-	LabelStyle   json.RawMessage `json:"labelStyle,omitempty"`
+	LabelStyle   json.RawMessage `json:"labelStyle,omitempty" swaggertype:"object"`
 }
 
 // =============================================================================

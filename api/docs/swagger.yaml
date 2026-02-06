@@ -1,0 +1,319 @@
+basePath: /api/v1
+definitions:
+  workflow.APIResponse:
+    properties:
+      data: {}
+      endpoint:
+        type: string
+      method:
+        type: string
+      statusCode:
+        type: integer
+    type: object
+  workflow.Condition:
+    properties:
+      operator:
+        type: string
+      threshold:
+        type: number
+    type: object
+  workflow.ConditionResult:
+    properties:
+      expression:
+        type: string
+      operator:
+        type: string
+      result:
+        type: boolean
+      temperature:
+        type: number
+      threshold:
+        type: number
+    type: object
+  workflow.EdgeResponse:
+    properties:
+      animated:
+        type: boolean
+      id:
+        type: string
+      label:
+        type: string
+      labelStyle:
+        type: object
+      source:
+        type: string
+      sourceHandle:
+        type: string
+      style:
+        type: object
+      target:
+        type: string
+      type:
+        type: string
+    type: object
+  workflow.EmailContent:
+    properties:
+      body:
+        type: string
+      subject:
+        type: string
+      timestamp:
+        type: string
+      to:
+        type: string
+    type: object
+  workflow.ExecuteWorkflowRequest:
+    properties:
+      condition:
+        $ref: '#/definitions/workflow.Condition'
+      formData:
+        $ref: '#/definitions/workflow.FormData'
+    type: object
+  workflow.ExecutionResponse:
+    properties:
+      endTime:
+        type: string
+      executionId:
+        type: string
+      startTime:
+        type: string
+      status:
+        type: string
+      steps:
+        items:
+          $ref: '#/definitions/workflow.ExecutionStep'
+        type: array
+      totalDuration:
+        type: integer
+    type: object
+  workflow.ExecutionStep:
+    properties:
+      duration:
+        type: integer
+      error:
+        type: string
+      nodeType:
+        type: string
+      output:
+        $ref: '#/definitions/workflow.StepOutput'
+      status:
+        type: string
+      stepNumber:
+        type: integer
+      timestamp:
+        type: string
+    type: object
+  workflow.ExecutionSummary:
+    properties:
+      executedAt:
+        type: string
+      id:
+        type: string
+      status:
+        type: string
+      workflowId:
+        type: string
+    type: object
+  workflow.ExecutionsListResponse:
+    properties:
+      executions:
+        items:
+          $ref: '#/definitions/workflow.ExecutionSummary'
+        type: array
+    type: object
+  workflow.FormData:
+    properties:
+      city:
+        type: string
+      email:
+        type: string
+      name:
+        type: string
+      operator:
+        type: string
+      threshold:
+        type: number
+    type: object
+  workflow.NodeDataResponse:
+    properties:
+      description:
+        type: string
+      label:
+        type: string
+      metadata:
+        type: object
+    type: object
+  workflow.NodePosition:
+    properties:
+      x:
+        type: number
+      "y":
+        type: number
+    type: object
+  workflow.NodeResponse:
+    properties:
+      data:
+        $ref: '#/definitions/workflow.NodeDataResponse'
+      id:
+        type: string
+      position:
+        $ref: '#/definitions/workflow.NodePosition'
+      type:
+        type: string
+    type: object
+  workflow.StepOutput:
+    properties:
+      apiResponse:
+        $ref: '#/definitions/workflow.APIResponse'
+      conditionResult:
+        $ref: '#/definitions/workflow.ConditionResult'
+      details:
+        additionalProperties: {}
+        type: object
+      emailContent:
+        $ref: '#/definitions/workflow.EmailContent'
+      formData:
+        $ref: '#/definitions/workflow.FormData'
+      message:
+        type: string
+    type: object
+  workflow.WorkflowResponse:
+    properties:
+      edges:
+        items:
+          $ref: '#/definitions/workflow.EdgeResponse'
+        type: array
+      id:
+        type: string
+      nodes:
+        items:
+          $ref: '#/definitions/workflow.NodeResponse'
+        type: array
+    type: object
+host: localhost:8080
+info:
+  contact:
+    name: API Support
+    url: https://github.com/albert-saclot/workflow-go-challenge
+  description: |-
+    A Go-based API for managing and executing workflow automations.
+    Provides endpoints to retrieve workflow definitions, execute workflows, and view execution history.
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  title: Workflow Engine API
+  version: "1.0"
+paths:
+  /api/v1/workflows/{id}:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a workflow by ID including all nodes and edges
+      parameters:
+      - description: Workflow ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/workflow.WorkflowResponse'
+        "400":
+          description: invalid workflow id
+          schema:
+            type: string
+        "404":
+          description: workflow not found
+          schema:
+            type: string
+        "500":
+          description: internal server error
+          schema:
+            type: string
+      summary: Get workflow definition
+      tags:
+      - workflows
+  /api/v1/workflows/{id}/execute:
+    post:
+      consumes:
+      - application/json
+      description: Executes a workflow with the provided form data and returns execution
+        results
+      parameters:
+      - description: Workflow ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Execution request with form data
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/workflow.ExecuteWorkflowRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/workflow.ExecutionResponse'
+        "400":
+          description: invalid workflow id, invalid request body, or missing required
+            fields
+          schema:
+            type: string
+        "404":
+          description: workflow not found
+          schema:
+            type: string
+        "500":
+          description: internal server error
+          schema:
+            type: string
+      summary: Execute a workflow
+      tags:
+      - workflows
+  /api/v1/workflows/{id}/executions:
+    get:
+      consumes:
+      - application/json
+      description: Retrieves a list of past executions for a workflow
+      parameters:
+      - description: Workflow ID
+        format: uuid
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/workflow.ExecutionsListResponse'
+        "400":
+          description: invalid workflow id
+          schema:
+            type: string
+        "404":
+          description: workflow not found
+          schema:
+            type: string
+        "500":
+          description: internal server error
+          schema:
+            type: string
+      summary: Get workflow execution history
+      tags:
+      - workflows
+schemes:
+- http
+swagger: "2.0"

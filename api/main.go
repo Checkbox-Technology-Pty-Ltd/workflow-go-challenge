@@ -11,10 +11,28 @@ import (
 
 	"github.com/gorilla/handlers"
 	"github.com/gorilla/mux"
+	httpSwagger "github.com/swaggo/http-swagger"
 
+	_ "workflow-code-test/api/docs"
 	"workflow-code-test/api/pkg/db"
 	"workflow-code-test/api/services/workflow"
 )
+
+// @title Workflow Engine API
+// @version 1.0
+// @description A Go-based API for managing and executing workflow automations.
+// @description Provides endpoints to retrieve workflow definitions, execute workflows, and view execution history.
+
+// @contact.name API Support
+// @contact.url https://github.com/albert-saclot/workflow-go-challenge
+
+// @license.name MIT
+// @license.url https://opensource.org/licenses/MIT
+
+// @host localhost:8080
+// @BasePath /api/v1
+
+// @schemes http
 
 func main() {
 	ctx := context.Background()
@@ -48,6 +66,9 @@ func main() {
 	}
 
 	workflowService.LoadRoutes(apiRouter)
+
+	// Swagger documentation endpoint
+	mainRouter.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
 
 	corsHandler := handlers.CORS(
 		// Frontend URL

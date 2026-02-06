@@ -14,6 +14,18 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+// HandleGetWorkflow godoc
+// @Summary Get workflow definition
+// @Description Retrieves a workflow by ID including all nodes and edges
+// @Tags workflows
+// @Accept json
+// @Produce json
+// @Param id path string true "Workflow ID" format(uuid)
+// @Success 200 {object} WorkflowResponse
+// @Failure 400 {string} string "invalid workflow id"
+// @Failure 404 {string} string "workflow not found"
+// @Failure 500 {string} string "internal server error"
+// @Router /api/v1/workflows/{id} [get]
 func (s *Service) HandleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	idStr := mux.Vars(r)["id"]
@@ -71,6 +83,19 @@ func (s *Service) HandleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// HandleExecuteWorkflow godoc
+// @Summary Execute a workflow
+// @Description Executes a workflow with the provided form data and returns execution results
+// @Tags workflows
+// @Accept json
+// @Produce json
+// @Param id path string true "Workflow ID" format(uuid)
+// @Param request body ExecuteWorkflowRequest true "Execution request with form data"
+// @Success 200 {object} ExecutionResponse
+// @Failure 400 {string} string "invalid workflow id, invalid request body, or missing required fields"
+// @Failure 404 {string} string "workflow not found"
+// @Failure 500 {string} string "internal server error"
+// @Router /api/v1/workflows/{id}/execute [post]
 func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	idStr := mux.Vars(r)["id"]
@@ -195,6 +220,18 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// HandleGetExecutions godoc
+// @Summary Get workflow execution history
+// @Description Retrieves a list of past executions for a workflow
+// @Tags workflows
+// @Accept json
+// @Produce json
+// @Param id path string true "Workflow ID" format(uuid)
+// @Success 200 {object} ExecutionsListResponse
+// @Failure 400 {string} string "invalid workflow id"
+// @Failure 404 {string} string "workflow not found"
+// @Failure 500 {string} string "internal server error"
+// @Router /api/v1/workflows/{id}/executions [get]
 func (s *Service) HandleGetExecutions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	idStr := mux.Vars(r)["id"]
