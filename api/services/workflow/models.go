@@ -148,13 +148,13 @@ type ExecutionsListResponse struct {
 
 // ExecutionStep represents a single step in the execution trace
 type ExecutionStep struct {
-	StepNumber int            `json:"stepNumber"`
-	NodeType   string         `json:"nodeType"`
-	Status     string         `json:"status"`
-	Duration   int64          `json:"duration"`
-	Output     StepOutput     `json:"output"`
-	Timestamp  string         `json:"timestamp"`
-	Error      string         `json:"error,omitempty"`
+	StepNumber int        `json:"stepNumber"`
+	NodeType   string     `json:"nodeType"`
+	Status     string     `json:"status"`
+	Duration   int64      `json:"duration"`
+	Output     StepOutput `json:"output"`
+	Timestamp  string     `json:"timestamp"`
+	Error      string     `json:"error,omitempty"`
 }
 
 // StepOutput contains the output of an execution step

@@ -345,7 +345,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 	t.Run("execution is persisted to database", func(t *testing.T) {
 		var savedExec *WorkflowExecution
 		mockRepo := &MockRepository{}
-		
+
 		mockRepo.GetWorkflowFunc = func(ctx context.Context, id uuid.UUID) (*Workflow, error) {
 			return &Workflow{ID: validID}, nil
 		}
@@ -359,7 +359,6 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 			savedExec = exec
 			return nil
 		}
-
 
 		svc := NewServiceWithDeps(mockRepo, &MockWeatherClient{temp: 30.0})
 

@@ -89,9 +89,12 @@ func (e *Executor) Execute(ctx context.Context, graph *Graph, initialState map[s
 		return nil, err
 	}
 
-	// Apply execution timeout if not already set
-	ctx, cancel := context.WithTimeout(ctx, DefaultExecutionTimeout)
-	defer cancel()
+	// Apply default execution timeout only if context doesn't have a deadline
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultExecutionTimeout)
+		defer cancel()
+	}
 
 	var steps []ExecutionStep
 
