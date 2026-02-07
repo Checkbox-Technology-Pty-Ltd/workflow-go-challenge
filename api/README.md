@@ -86,11 +86,19 @@ The workflow execution logic lives in a standalone package with no HTTP or datab
 
 ### 2. Strategy Pattern for Handlers
 
-Each node type (start, form, weather, condition, email, end) has its own handler implementing a common interface.
+Each node type (start, form, weather, condition, email, sms, end) has its own handler implementing a common interface.
 
 **Why:** Adding new node types doesn't require modifying existing code. Each handler is independently testable.
 
 **Trade-off:** More files compared to a single switch statement.
+
+### 2b. Dependency Injection for External Clients
+
+Handlers that interact with external services (weather API, email, SMS) receive their clients as injected functions rather than creating them internally.
+
+**Why:** Easy to test with mocks, swappable implementations (MockClient vs SMTPClient vs SendGridClient).
+
+**Trade-off:** Indirect wiring through the Service layer.
 
 ### 3. Graph Traversal with Linear Execution
 
@@ -134,6 +142,8 @@ api/
 │   ├── handler.go        # NodeHandler interface + Registry
 │   └── handlers/         # Individual node type implementations
 ├── pkg/weather/          # Open-Meteo API client
+├── pkg/email/            # Email client abstraction (MockClient, SMTPClient)
+├── pkg/sms/              # SMS client abstraction (MockClient, TwilioClient)
 ├── services/workflow/    # HTTP handlers + repository
 └── docs/                 # Generated Swagger docs
 ```
