@@ -45,6 +45,8 @@ func edge(id, source, target string, sourceHandle *string) storage.Edge {
 func strPtr(s string) *string { return &s }
 
 func TestExecuteWorkflow(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		nodes      []storage.Node
@@ -64,11 +66,11 @@ func TestExecuteWorkflow(t *testing.T) {
 			wantSteps:  2,
 		},
 		{
-			name:       "no start node",
-			nodes:      []storage.Node{node("end", "end")},
-			edges:      []storage.Edge{},
-			inputs:     map[string]any{},
-			wantError:  true,
+			name:      "no start node",
+			nodes:     []storage.Node{node("end", "end")},
+			edges:     []storage.Edge{},
+			inputs:    map[string]any{},
+			wantError: true,
 		},
 		{
 			name: "cycle detection",
@@ -164,6 +166,7 @@ func TestExecuteWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			wf := buildWorkflow(tt.nodes, tt.edges)
 			result, err := executeWorkflow(context.Background(), wf, tt.inputs, nodes.Deps{})
 
@@ -191,6 +194,7 @@ func TestExecuteWorkflow(t *testing.T) {
 }
 
 func TestExecuteWorkflow_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
@@ -210,6 +214,7 @@ func TestExecuteWorkflow_ContextCancellation(t *testing.T) {
 }
 
 func TestNextNode(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		edges  []edgeTarget
@@ -257,6 +262,7 @@ func TestNextNode(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := nextNode(tt.edges, tt.branch)
 			if got != tt.want {
 				t.Errorf("got %q, want %q", got, tt.want)

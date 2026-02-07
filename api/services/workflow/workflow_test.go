@@ -38,6 +38,7 @@ func newTestRouter(svc *Service) *mux.Router {
 }
 
 func TestNewService_NilStore(t *testing.T) {
+	t.Parallel()
 	_, err := NewService(nil, nodes.Deps{})
 	if err == nil {
 		t.Error("expected error for nil store, got nil")
@@ -45,6 +46,7 @@ func TestNewService_NilStore(t *testing.T) {
 }
 
 func TestHandleGetWorkflow(t *testing.T) {
+	t.Parallel()
 	wfID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 
 	sampleWorkflow := &storage.Workflow{
@@ -66,11 +68,11 @@ func TestHandleGetWorkflow(t *testing.T) {
 	}
 
 	tests := []struct {
-		name           string
-		url            string
-		store          *mockStorage
-		wantStatus     int
-		checkBody      func(t *testing.T, body []byte)
+		name       string
+		url        string
+		store      *mockStorage
+		wantStatus int
+		checkBody  func(t *testing.T, body []byte)
 	}{
 		{
 			name:       "invalid UUID returns 400",
@@ -129,6 +131,7 @@ func TestHandleGetWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			svc, err := NewService(tt.store, nodes.Deps{})
 			if err != nil {
 				t.Fatalf("failed to create service: %v", err)
@@ -152,6 +155,7 @@ func TestHandleGetWorkflow(t *testing.T) {
 }
 
 func TestHandleExecuteWorkflow(t *testing.T) {
+	t.Parallel()
 	wfID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
 
 	// Minimal workflow: start → end (no external calls needed)
@@ -261,6 +265,7 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			svc, err := NewService(tt.store, nodes.Deps{})
 			if err != nil {
 				t.Fatalf("failed to create service: %v", err)

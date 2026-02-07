@@ -50,6 +50,7 @@ func setupSuccessMock(mock pgxmock.PgxPoolIface) {
 }
 
 func TestGetWorkflow(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		setupMock func(mock pgxmock.PgxPoolIface)
@@ -159,6 +160,7 @@ func TestGetWorkflow(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			mock, err := pgxmock.NewPool()
 			if err != nil {
 				t.Fatalf("failed to create mock pool: %v", err)

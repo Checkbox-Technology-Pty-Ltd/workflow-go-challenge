@@ -15,7 +15,6 @@ const (
 
 	// nodeTimeout limits how long a single node can execute.
 	// Prevents slow external API calls from blocking the entire workflow.
-	// TODO: consider per-node-type timeouts and retry with backoff for 429s.
 	nodeTimeout = 10 * time.Second
 )
 
