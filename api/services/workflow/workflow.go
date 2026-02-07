@@ -180,11 +180,13 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	startTime := time.Now()
 	executionID := uuid.New()
 
-	// Build initial state from form data
+	// Build initial state from form data and condition
 	initialState := map[string]interface{}{
-		"form.name":  req.FormData.Name,
-		"form.email": req.FormData.Email,
-		"form.city":  req.FormData.City,
+		"form.name":           req.FormData.Name,
+		"form.email":          req.FormData.Email,
+		"form.city":           req.FormData.City,
+		"condition.operator":  req.Condition.Operator,
+		"condition.threshold": req.Condition.Threshold,
 	}
 
 	// Execute workflow using graph traversal

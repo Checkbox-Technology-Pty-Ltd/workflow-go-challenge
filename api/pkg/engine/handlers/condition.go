@@ -23,25 +23,31 @@ func (h *ConditionHandler) NodeType() string { return "condition" }
 func (h *ConditionHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (engine.ExecutionStep, error) {
 	startTime := time.Now()
 
-	// Parse metadata for operator and threshold
-	var metadata struct {
-		Operator  string  `json:"operator"`
-		Threshold float64 `json:"threshold"`
-	}
+	// Try to get operator and threshold from execution state first (from request),
+	// then fall back to node metadata (from workflow definition)
+	operator := ec.GetString("condition.operator")
+	threshold := ec.GetFloat("condition.threshold")
 
-	if len(node.Metadata) > 0 {
+	// Fall back to node metadata if not in state
+	if operator == "" && len(node.Metadata) > 0 {
+		var metadata struct {
+			Operator  string  `json:"operator"`
+			Threshold float64 `json:"threshold"`
+		}
 		if err := json.Unmarshal(node.Metadata, &metadata); err != nil {
 			return engine.ExecutionStep{}, fmt.Errorf("failed to parse condition metadata: %w", err)
 		}
+		operator = metadata.Operator
+		threshold = metadata.Threshold
 	}
 
-	if metadata.Operator == "" {
-		return engine.ExecutionStep{}, fmt.Errorf("operator not specified in condition node metadata")
+	if operator == "" {
+		return engine.ExecutionStep{}, fmt.Errorf("operator not specified in condition (provide in request or node metadata)")
 	}
 
 	temperature := ec.GetFloat("weather.temperature")
 
-	result := evaluateCondition(temperature, metadata.Operator, metadata.Threshold)
+	result := evaluateCondition(temperature, operator, threshold)
 
 	duration := time.Since(startTime).Milliseconds()
 
@@ -52,13 +58,13 @@ func (h *ConditionHandler) Execute(ec *engine.ExecutionContext, node *engine.Nod
 		Status:     "completed",
 		Duration:   duration,
 		Output: map[string]interface{}{
-			"message": fmt.Sprintf("Condition evaluated: temperature %.1f°C %s %.1f°C", temperature, metadata.Operator, metadata.Threshold),
+			"message": fmt.Sprintf("Condition evaluated: temperature %.1f°C %s %.1f°C", temperature, operator, threshold),
 			"conditionResult": map[string]interface{}{
-				"expression":  fmt.Sprintf("temperature %s %.1f", metadata.Operator, metadata.Threshold),
+				"expression":  fmt.Sprintf("temperature %s %.1f", operator, threshold),
 				"result":      result,
 				"temperature": temperature,
-				"operator":    metadata.Operator,
-				"threshold":   metadata.Threshold,
+				"operator":    operator,
+				"threshold":   threshold,
 			},
 		},
 		Timestamp: time.Now().Format(time.RFC3339),
