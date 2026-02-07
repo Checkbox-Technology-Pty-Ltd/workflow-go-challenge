@@ -2,17 +2,17 @@ package nodes
 
 import "context"
 
-// PassthroughNode handles node types with no execution logic (start, end).
+// SentinelNode marks the boundaries of a workflow graph (start, end).
 // It preserves the raw DB metadata for ToJSON() and is a no-op on Execute().
-type PassthroughNode struct {
+type SentinelNode struct {
 	base BaseFields
 }
 
-func NewPassthroughNode(base BaseFields) *PassthroughNode {
-	return &PassthroughNode{base: base}
+func NewSentinelNode(base BaseFields) *SentinelNode {
+	return &SentinelNode{base: base}
 }
 
-func (n *PassthroughNode) ToJSON() NodeJSON {
+func (n *SentinelNode) ToJSON() NodeJSON {
 	return NodeJSON{
 		ID:       n.base.ID,
 		Type:     n.base.NodeType,
@@ -25,6 +25,6 @@ func (n *PassthroughNode) ToJSON() NodeJSON {
 	}
 }
 
-func (n *PassthroughNode) Execute(_ context.Context, _ *NodeContext) (*ExecutionResult, error) {
+func (n *SentinelNode) Execute(_ context.Context, _ *NodeContext) (*ExecutionResult, error) {
 	return &ExecutionResult{Status: "completed"}, nil
 }

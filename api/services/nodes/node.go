@@ -6,6 +6,8 @@ import (
 	"fmt"
 
 	"workflow-code-test/api/pkg/clients/email"
+	"workflow-code-test/api/pkg/clients/flood"
+	"workflow-code-test/api/pkg/clients/sms"
 	"workflow-code-test/api/pkg/clients/weather"
 )
 
@@ -71,23 +73,29 @@ type Node interface {
 type Deps struct {
 	Weather weather.Client
 	Email   email.Client
+	SMS     sms.Client
+	Flood   flood.Client
 }
 
 // New constructs the appropriate node type from its database fields.
-// Adding a new node type (e.g., SMS) means adding a case here
-// and a new file implementing the Node interface.
+// Adding a new node type means adding a case here and a new file
+// implementing the Node interface.
 func New(base BaseFields, deps Deps) (Node, error) {
 	switch base.NodeType {
 	case "start", "end":
-		return NewPassthroughNode(base), nil
+		return NewSentinelNode(base), nil
 	case "form":
 		return NewFormNode(base)
 	case "integration":
-		return NewIntegrationNode(base, deps.Weather)
+		return NewWeatherNode(base, deps.Weather)
 	case "condition":
 		return NewConditionNode(base)
 	case "email":
 		return NewEmailNode(base, deps.Email)
+	case "sms":
+		return NewSmsNode(base, deps.SMS)
+	case "flood":
+		return NewFloodNode(base, deps.Flood)
 	default:
 		return nil, fmt.Errorf("unknown node type: %s", base.NodeType)
 	}

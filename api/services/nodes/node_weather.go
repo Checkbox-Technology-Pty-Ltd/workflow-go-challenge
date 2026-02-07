@@ -10,9 +10,9 @@ import (
 	"workflow-code-test/api/pkg/clients/weather"
 )
 
-// IntegrationNode calls an external API based on its metadata configuration.
+// WeatherNode calls an external API based on its metadata configuration.
 // Raw metadata is preserved for ToJSON(); parsed fields are used by Execute().
-type IntegrationNode struct {
+type WeatherNode struct {
 	base    BaseFields
 	weather weather.Client
 
@@ -29,11 +29,11 @@ type CityOption struct {
 	Lon  float64 `json:"lon"`
 }
 
-// NewIntegrationNode constructs itself from the database fields.
+// NewWeatherNode constructs itself from the database fields.
 // Metadata is parsed into typed fields for Execute(), while the raw
 // bytes are kept on base for lossless ToJSON() passthrough.
-func NewIntegrationNode(base BaseFields, weatherClient weather.Client) (*IntegrationNode, error) {
-	n := &IntegrationNode{base: base, weather: weatherClient}
+func NewWeatherNode(base BaseFields, weatherClient weather.Client) (*WeatherNode, error) {
+	n := &WeatherNode{base: base, weather: weatherClient}
 	if err := json.Unmarshal(base.Metadata, n); err != nil {
 		return nil, fmt.Errorf("invalid integration metadata: %w", err)
 	}
@@ -42,7 +42,7 @@ func NewIntegrationNode(base BaseFields, weatherClient weather.Client) (*Integra
 
 // ToJSON returns the React Flow representation.
 // Metadata is the raw DB value — no reconstruction, no data loss.
-func (n *IntegrationNode) ToJSON() NodeJSON {
+func (n *WeatherNode) ToJSON() NodeJSON {
 	return NodeJSON{
 		ID:       n.base.ID,
 		Type:     n.base.NodeType,
@@ -57,7 +57,7 @@ func (n *IntegrationNode) ToJSON() NodeJSON {
 
 // Execute resolves the city from context, looks up coordinates,
 // and calls the weather client to fetch the current temperature.
-func (n *IntegrationNode) Execute(ctx context.Context, nCtx *NodeContext) (*ExecutionResult, error) {
+func (n *WeatherNode) Execute(ctx context.Context, nCtx *NodeContext) (*ExecutionResult, error) {
 	city, ok := nCtx.Variables["city"].(string)
 	if !ok {
 		return nil, fmt.Errorf("missing required input variable: city")
