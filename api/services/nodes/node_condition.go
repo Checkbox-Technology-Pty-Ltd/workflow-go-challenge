@@ -6,14 +6,24 @@ import (
 	"fmt"
 )
 
+// Operator defines the supported comparison operators for condition evaluation.
+type Operator string
+
+const (
+	OpGreaterThan        Operator = "greater_than"
+	OpLessThan           Operator = "less_than"
+	OpEqualTo            Operator = "equal_to"
+	OpGreaterThanOrEqual Operator = "greater_than_or_equal"
+	OpLessThanOrEqual    Operator = "less_than_or_equal"
+)
+
 // ConditionNode evaluates a condition expression against runtime variables.
 // It outputs conditionMet (bool) and sets Branch to "true" or "false",
 // which the execution engine uses to follow the correct outgoing edge.
 type ConditionNode struct {
 	base BaseFields
 
-	ConditionExpression string   `json:"conditionExpression"`
-	ConditionVariable   string   `json:"conditionVariable"`
+	ConditionVariable string `json:"conditionVariable"`
 	OutputVariables     []string `json:"outputVariables"`
 }
 
@@ -52,9 +62,10 @@ func (n *ConditionNode) Execute(_ context.Context, nCtx *NodeContext) (*Executio
 		return nil, fmt.Errorf("missing or invalid variable: %s", varName)
 	}
 
-	operator, _ := nCtx.Variables["operator"].(string)
+	raw, _ := nCtx.Variables["operator"].(string)
+	operator := Operator(raw)
 	if operator == "" {
-		operator = "greater_than" // default
+		operator = OpGreaterThan
 	}
 
 	threshold, ok := toFloat64(nCtx.Variables["threshold"])
@@ -88,20 +99,20 @@ func (n *ConditionNode) Execute(_ context.Context, nCtx *NodeContext) (*Executio
 	}, nil
 }
 
-func evaluate(value float64, operator string, threshold float64) (bool, error) {
-	switch operator {
-	case "greater_than":
+func evaluate(value float64, op Operator, threshold float64) (bool, error) {
+	switch op {
+	case OpGreaterThan:
 		return value > threshold, nil
-	case "less_than":
+	case OpLessThan:
 		return value < threshold, nil
-	case "equal_to":
+	case OpEqualTo:
 		return value == threshold, nil
-	case "greater_than_or_equal":
+	case OpGreaterThanOrEqual:
 		return value >= threshold, nil
-	case "less_than_or_equal":
+	case OpLessThanOrEqual:
 		return value <= threshold, nil
 	default:
-		return false, fmt.Errorf("unsupported operator: %s", operator)
+		return false, fmt.Errorf("unsupported operator: %s", op)
 	}
 }
 
