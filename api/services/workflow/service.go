@@ -1,13 +1,19 @@
 package workflow
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"workflow-code-test/api/services/nodes"
 	"workflow-code-test/api/services/storage"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
+
+type contextKey string
+
+const requestIDKey contextKey = "requestID"
 
 // Service handles HTTP requests for workflow operations.
 // It depends on the Storage interface rather than a concrete implementation,
@@ -26,6 +32,20 @@ func NewService(store storage.Storage, deps nodes.Deps) (*Service, error) {
 	return &Service{storage: store, deps: deps}, nil
 }
 
+// requestIDMiddleware assigns a unique ID to each request for log correlation.
+// If the client sends X-Request-ID, it's reused; otherwise a new UUID is generated.
+func requestIDMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := r.Header.Get("X-Request-ID")
+		if id == "" {
+			id = uuid.New().String()
+		}
+		ctx := context.WithValue(r.Context(), requestIDKey, id)
+		w.Header().Set("X-Request-ID", id)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
 // jsonMiddleware sets the Content-Type header to application/json
 func jsonMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +57,7 @@ func jsonMiddleware(next http.Handler) http.Handler {
 func (s *Service) LoadRoutes(parentRouter *mux.Router) {
 	router := parentRouter.PathPrefix("/workflows").Subrouter()
 	router.StrictSlash(false)
+	router.Use(requestIDMiddleware)
 	router.Use(jsonMiddleware)
 
 	router.HandleFunc("/{id}", s.HandleGetWorkflow).Methods("GET")
