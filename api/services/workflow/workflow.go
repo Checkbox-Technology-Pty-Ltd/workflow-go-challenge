@@ -3,6 +3,7 @@ package workflow
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -10,7 +11,18 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5"
+
+	"workflow-code-test/api/services/nodes"
+	"workflow-code-test/api/services/storage"
 )
+
+// writeErrorJSON writes a structured JSON error response.
+// Replaces plain-text http.Error to stay consistent with the JSON content-type middleware.
+func writeErrorJSON(w http.ResponseWriter, message string, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]any{"error": message})
+}
 
 // HandleGetWorkflow loads a workflow definition by ID from the database and
 // returns it as JSON in the format React Flow expects (id, nodes, edges).
@@ -20,8 +32,8 @@ func (s *Service) HandleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	wfUUID, err := uuid.Parse(id)
 	if err != nil {
-		slog.Error("invalid workflow id provided", "error", err)
-		http.Error(w, "invalid workflow id", http.StatusBadRequest)
+		slog.Warn("invalid workflow id provided", "id", id, "error", err)
+		writeErrorJSON(w, "invalid workflow id", http.StatusBadRequest)
 		return
 	}
 
@@ -29,26 +41,60 @@ func (s *Service) HandleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	wf, err := s.storage.GetWorkflow(ctx, wfUUID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Error("workflow not found", "error", wfUUID)
-			http.Error(w, "workflow not found", http.StatusNotFound)
+			slog.Warn("workflow not found", "id", wfUUID)
+			writeErrorJSON(w, "workflow not found", http.StatusNotFound)
 			return
 		}
-		slog.Error("failed to get workflow", "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		slog.Error("failed to get workflow", "id", wfUUID, "error", err)
+		writeErrorJSON(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
-	payload, err := json.Marshal(wf.ToFrontend())
+	nodeJSONs, err := buildNodeJSONs(wf.Nodes, s.deps)
 	if err != nil {
-		slog.Error("failed to marshal workflow", "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		slog.Error("failed to construct nodes", "id", wfUUID, "error", err)
+		writeErrorJSON(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"id":    wf.ID,
+		"nodes": nodeJSONs,
+		"edges": wf.Edges,
+	})
+	if err != nil {
+		slog.Error("failed to marshal workflow", "id", wfUUID, "error", err)
+		writeErrorJSON(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(payload); err != nil {
-		slog.Error("failed to write response", "error", err)
+		slog.Error("failed to write response", "id", wfUUID, "error", err)
 	}
+}
+
+// buildNodeJSONs constructs typed nodes from storage data and calls
+// each node's ToJSON() to produce the frontend representation.
+func buildNodeJSONs(storageNodes []storage.Node, deps nodes.Deps) ([]nodes.NodeJSON, error) {
+	result := make([]nodes.NodeJSON, 0, len(storageNodes))
+	for _, sn := range storageNodes {
+		base := nodes.BaseFields{
+			ID:          sn.ID,
+			NodeType:    sn.Type,
+			Position:    nodes.Position{X: sn.Position.X, Y: sn.Position.Y},
+			Label:       sn.Data.Label,
+			Description: sn.Data.Description,
+			Metadata:    sn.Data.Metadata,
+		}
+
+		n, err := nodes.New(base, deps)
+		if err != nil {
+			return nil, fmt.Errorf("node %q: %w", sn.ID, err)
+		}
+		result = append(result, n.ToJSON())
+	}
+	return result, nil
 }
 
 // HandleExecuteWorkflow loads a workflow from the database, parses the input
@@ -62,8 +108,8 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 
 	wfUUID, err := uuid.Parse(id)
 	if err != nil {
-		slog.Error("invalid workflow id provided", "error", err)
-		http.Error(w, "invalid workflow id", http.StatusBadRequest)
+		slog.Warn("invalid workflow id provided", "id", id, "error", err)
+		writeErrorJSON(w, "invalid workflow id", http.StatusBadRequest)
 		return
 	}
 
@@ -75,8 +121,8 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 		Condition map[string]any `json:"condition"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		slog.Error("failed to decode request body", "error", err)
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+		slog.Warn("failed to decode request body", "id", wfUUID, "error", err)
+		writeErrorJSON(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -92,12 +138,12 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	wf, err := s.storage.GetWorkflow(ctx, wfUUID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			slog.Error("workflow not found", "id", wfUUID)
-			http.Error(w, "workflow not found", http.StatusNotFound)
+			slog.Warn("workflow not found", "id", wfUUID)
+			writeErrorJSON(w, "workflow not found", http.StatusNotFound)
 			return
 		}
-		slog.Error("failed to get workflow", "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		slog.Error("failed to get workflow", "id", wfUUID, "error", err)
+		writeErrorJSON(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -105,14 +151,15 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	result, err := executeWorkflow(ctx, wf, inputs, s.deps)
 	if err != nil {
 		// Hard errors (e.g. invalid node metadata) are server-level failures
-		slog.Error("workflow execution failed", "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		slog.Error("workflow execution failed", "id", wfUUID, "error", err)
+		writeErrorJSON(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 	result.ExecutedAt = executedAt
 
 	if result.Status == "failed" {
 		slog.Warn("workflow completed with failure",
+			"id", wfUUID,
 			"failedNode", result.FailedNode,
 			"error", result.Error,
 		)
@@ -120,13 +167,13 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 
 	payload, err := json.Marshal(result)
 	if err != nil {
-		slog.Error("failed to marshal execution result", "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		slog.Error("failed to marshal execution result", "id", wfUUID, "error", err)
+		writeErrorJSON(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write(payload); err != nil {
-		slog.Error("failed to write response", "error", err)
+		slog.Error("failed to write response", "id", wfUUID, "error", err)
 	}
 }

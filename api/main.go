@@ -82,8 +82,11 @@ func main() {
 	)(mainRouter)
 
 	srv := &http.Server{
-		Addr:    ":8080",
-		Handler: corsHandler,
+		Addr:         ":8080",
+		Handler:      corsHandler,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
 	}
 
 	serverErrors := make(chan error, 1)

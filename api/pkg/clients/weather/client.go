@@ -36,7 +36,7 @@ func NewOpenMeteoClient(httpClient *http.Client) *OpenMeteoClient {
 func (c *OpenMeteoClient) GetTemperature(ctx context.Context, lat, lon float64) (float64, error) {
 	url := fmt.Sprintf("%s?latitude=%f&longitude=%f&current_weather=true", c.baseURL, lat, lon)
 
-	slog.Info("calling weather API", "url", url)
+	slog.Debug("calling weather API", "url", url)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

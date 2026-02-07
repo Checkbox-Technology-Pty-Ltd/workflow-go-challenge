@@ -74,14 +74,14 @@ func (n *WeatherNode) Execute(ctx context.Context, nCtx *NodeContext) (*Executio
 		return nil, fmt.Errorf("unsupported city: %s", city)
 	}
 
-	slog.Info("fetching weather", "city", city, "lat", opt.Lat, "lon", opt.Lon)
+	slog.Debug("fetching weather", "city", city, "lat", opt.Lat, "lon", opt.Lon)
 
 	temp, err := n.weather.GetTemperature(ctx, opt.Lat, opt.Lon)
 	if err != nil {
 		return nil, fmt.Errorf("weather lookup failed: %w", err)
 	}
 
-	slog.Info("weather result", "city", city, "temperature", temp)
+	slog.Debug("weather result", "city", city, "temperature", temp)
 
 	return &ExecutionResult{
 		Status: "completed",

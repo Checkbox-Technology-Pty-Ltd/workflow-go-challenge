@@ -39,7 +39,7 @@ func NewOpenMeteoClient(httpClient *http.Client) *OpenMeteoClient {
 func (c *OpenMeteoClient) GetFloodRisk(ctx context.Context, lat, lon float64) (*Result, error) {
 	url := fmt.Sprintf("%s?latitude=%f&longitude=%f&daily=river_discharge", c.baseURL, lat, lon)
 
-	slog.Info("calling flood API", "url", url)
+	slog.Debug("calling flood API", "url", url)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

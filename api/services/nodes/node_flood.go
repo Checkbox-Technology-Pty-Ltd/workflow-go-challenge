@@ -61,14 +61,14 @@ func (n *FloodNode) Execute(ctx context.Context, nCtx *NodeContext) (*ExecutionR
 		return nil, fmt.Errorf("unsupported city: %s", city)
 	}
 
-	slog.Info("fetching flood risk", "city", city, "lat", opt.Lat, "lon", opt.Lon)
+	slog.Debug("fetching flood risk", "city", city, "lat", opt.Lat, "lon", opt.Lon)
 
 	result, err := n.flood.GetFloodRisk(ctx, opt.Lat, opt.Lon)
 	if err != nil {
 		return nil, fmt.Errorf("flood risk lookup failed: %w", err)
 	}
 
-	slog.Info("flood risk result", "city", city, "risk", result.RiskLevel, "discharge", result.Discharge)
+	slog.Debug("flood risk result", "city", city, "risk", result.RiskLevel, "discharge", result.Discharge)
 
 	return &ExecutionResult{
 		Status: "completed",
