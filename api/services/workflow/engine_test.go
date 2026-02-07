@@ -211,6 +211,104 @@ func TestExecuteWorkflow_ContextCancellation(t *testing.T) {
 	}
 }
 
+func TestValidateDAG(t *testing.T) {
+	t.Parallel()
+
+	sn := func(id, typ string) storage.Node {
+		return storage.Node{ID: id, Type: typ}
+	}
+
+	tests := []struct {
+		name      string
+		nodes     []storage.Node
+		adjacency map[string][]edgeTarget
+		wantStart string
+		wantErr   bool
+	}{
+		{
+			name:      "linear graph returns start id",
+			nodes:     []storage.Node{sn("s", "start"), sn("e", "end")},
+			adjacency: map[string][]edgeTarget{"s": {{targetID: "e"}}},
+			wantStart: "s",
+		},
+		{
+			name:    "no start node returns error",
+			nodes:   []storage.Node{sn("a", "form"), sn("b", "end")},
+			wantErr: true,
+		},
+		{
+			name:  "simple cycle is detected",
+			nodes: []storage.Node{sn("s", "start"), sn("a", "form"), sn("b", "form")},
+			adjacency: map[string][]edgeTarget{
+				"s": {{targetID: "a"}},
+				"a": {{targetID: "b"}},
+				"b": {{targetID: "a"}},
+			},
+			wantErr: true,
+		},
+		{
+			name:  "self-loop is detected",
+			nodes: []storage.Node{sn("s", "start"), sn("a", "form")},
+			adjacency: map[string][]edgeTarget{
+				"s": {{targetID: "a"}},
+				"a": {{targetID: "a"}},
+			},
+			wantErr: true,
+		},
+		{
+			name:  "diamond shape is valid",
+			nodes: []storage.Node{sn("s", "start"), sn("a", "form"), sn("b", "form"), sn("e", "end")},
+			adjacency: map[string][]edgeTarget{
+				"s": {{targetID: "a"}, {targetID: "b"}},
+				"a": {{targetID: "e"}},
+				"b": {{targetID: "e"}},
+			},
+			wantStart: "s",
+		},
+		{
+			name:  "condition branching is valid",
+			nodes: []storage.Node{sn("s", "start"), sn("c", "condition"), sn("y", "end"), sn("n", "end")},
+			adjacency: map[string][]edgeTarget{
+				"s": {{targetID: "c"}},
+				"c": {{targetID: "y", sourceHandle: strPtr("true")}, {targetID: "n", sourceHandle: strPtr("false")}},
+			},
+			wantStart: "s",
+		},
+		{
+			name:      "disconnected node does not cause error",
+			nodes:     []storage.Node{sn("s", "start"), sn("e", "end"), sn("orphan", "form")},
+			adjacency: map[string][]edgeTarget{"s": {{targetID: "e"}}},
+			wantStart: "s",
+		},
+		{
+			name:      "single start node with no edges",
+			nodes:     []storage.Node{sn("s", "start")},
+			adjacency: map[string][]edgeTarget{},
+			wantStart: "s",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := validateDAG(tt.nodes, tt.adjacency)
+
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.wantStart {
+				t.Errorf("startID: got %q, want %q", got, tt.wantStart)
+			}
+		})
+	}
+}
+
 func TestNextNode(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
