@@ -7,6 +7,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// Compile-time verification that MockRepository implements Repository
+var _ Repository = (*MockRepository)(nil)
+
 // MockRepository implements Repository for testing.
 // All methods panic if the corresponding function is not set,
 // ensuring tests explicitly configure the behavior they expect.

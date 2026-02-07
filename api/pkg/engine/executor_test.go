@@ -355,3 +355,92 @@ func (h *slowHandler) Execute(ec *ExecutionContext, node *Node) (ExecutionStep, 
 		Output:     map[string]interface{}{"message": "slow operation"},
 	}, nil
 }
+
+// TestExecutor_DiamondPattern verifies that workflows with merging paths
+// (diamond patterns) execute correctly. The executor follows a single path,
+// so merging nodes are only visited once.
+func TestExecutor_DiamondPattern(t *testing.T) {
+	// Diamond pattern: start -> condition -> (email OR skip) -> end
+	// Both branches merge at the end node
+	graph := NewGraph()
+	graph.AddNode(&Node{ID: "start-1", Type: "start"})
+	condMetadata, _ := json.Marshal(map[string]interface{}{
+		"operator":  "greater_than",
+		"threshold": 25.0,
+	})
+	graph.AddNode(&Node{ID: "condition-1", Type: "condition", Metadata: condMetadata})
+	graph.AddNode(&Node{ID: "email-1", Type: "email"})
+	graph.AddNode(&Node{ID: "end-1", Type: "end"})
+
+	graph.AddEdge(Edge{SourceID: "start-1", TargetID: "condition-1"})
+	graph.AddEdge(Edge{SourceID: "condition-1", TargetID: "email-1", SourceHandle: "true"})
+	graph.AddEdge(Edge{SourceID: "condition-1", TargetID: "end-1", SourceHandle: "false"})
+	graph.AddEdge(Edge{SourceID: "email-1", TargetID: "end-1"})
+
+	registry := NewRegistry()
+	registry.Register(&mockHandler{nodeType: "start", output: map[string]interface{}{"message": "started"}})
+	registry.Register(&mockConditionHandler{result: true}) // Takes true branch -> email -> end
+	registry.Register(&mockHandler{nodeType: "email", output: map[string]interface{}{"message": "email sent"}})
+	registry.Register(&mockHandler{nodeType: "end", output: map[string]interface{}{"message": "ended"}})
+
+	executor := NewExecutor(registry)
+	steps, err := executor.Execute(context.Background(), graph, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Should have: start, condition, email, end (following true branch)
+	if len(steps) != 4 {
+		t.Errorf("expected 4 steps, got %d", len(steps))
+	}
+
+	// End node should only be visited once (no cycle error)
+	endCount := 0
+	for _, step := range steps {
+		if step.NodeType == "end" {
+			endCount++
+		}
+	}
+	if endCount != 1 {
+		t.Errorf("expected end node visited exactly once, got %d", endCount)
+	}
+}
+
+// TestExecutor_CycleDetection verifies that actual cycles are detected
+func TestExecutor_CycleDetection(t *testing.T) {
+	// Create a cycle: start -> A -> B -> A (back to A)
+	graph := NewGraph()
+	graph.AddNode(&Node{ID: "start-1", Type: "start"})
+	graph.AddNode(&Node{ID: "node-a", Type: "process"})
+	graph.AddNode(&Node{ID: "node-b", Type: "process"})
+
+	graph.AddEdge(Edge{SourceID: "start-1", TargetID: "node-a"})
+	graph.AddEdge(Edge{SourceID: "node-a", TargetID: "node-b"})
+	graph.AddEdge(Edge{SourceID: "node-b", TargetID: "node-a"}) // Cycle back to A
+
+	registry := NewRegistry()
+	registry.Register(&mockHandler{nodeType: "start", output: map[string]interface{}{"message": "started"}})
+	registry.Register(&mockHandler{nodeType: "process", output: map[string]interface{}{"message": "processing"}})
+
+	executor := NewExecutor(registry)
+	_, err := executor.Execute(context.Background(), graph, nil)
+	if err == nil {
+		t.Error("expected error for cycle, got nil")
+	}
+	if err != nil && !contains(err.Error(), "cycle detected") {
+		t.Errorf("expected cycle detection error, got: %v", err)
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsAt(s, substr, 0))
+}
+
+func containsAt(s, substr string, start int) bool {
+	for i := start; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}

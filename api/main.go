@@ -67,6 +67,18 @@ func main() {
 
 	workflowService.LoadRoutes(apiRouter)
 
+	// Health check endpoint
+	mainRouter.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		// Check database connectivity
+		if err := pool.Ping(r.Context()); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"status":"unhealthy","database":"disconnected"}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"healthy","database":"connected"}`))
+	}).Methods("GET")
+
 	// Swagger documentation endpoint
 	mainRouter.PathPrefix("/swagger/").Handler(httpSwagger.Handler(
 		httpSwagger.URL("/swagger/doc.json"),
