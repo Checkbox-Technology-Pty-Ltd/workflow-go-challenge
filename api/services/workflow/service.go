@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
+	"workflow-code-test/api/pkg/email"
 	"workflow-code-test/api/pkg/engine"
 	"workflow-code-test/api/pkg/engine/handlers"
+	"workflow-code-test/api/pkg/sms"
 	"workflow-code-test/api/pkg/weather"
 
 	"github.com/gorilla/mux"
@@ -32,22 +34,44 @@ func IsSupportedCity(city string) bool {
 type Service struct {
 	repo     Repository
 	weather  weather.Client
+	email    email.Client
+	sms      sms.Client
 	executor *engine.Executor
 }
 
 func NewService(pool *pgxpool.Pool) (*Service, error) {
 	repo := NewRepository(pool)
 	weatherClient := weather.NewOpenMeteoClient()
+	emailClient := email.NewMockClient()
+	smsClient := sms.NewMockClient()
 
-	svc := &Service{repo: repo, weather: weatherClient}
+	svc := &Service{
+		repo:    repo,
+		weather: weatherClient,
+		email:   emailClient,
+		sms:     smsClient,
+	}
 	registry := svc.createRegistry()
 	svc.executor = engine.NewExecutor(registry)
 
 	return svc, nil
 }
 
-func NewServiceWithDeps(repo Repository, weatherClient weather.Client) *Service {
-	svc := &Service{repo: repo, weather: weatherClient}
+// ServiceDeps holds all dependencies for creating a Service
+type ServiceDeps struct {
+	Repo    Repository
+	Weather weather.Client
+	Email   email.Client
+	SMS     sms.Client
+}
+
+func NewServiceWithDeps(deps ServiceDeps) *Service {
+	svc := &Service{
+		repo:    deps.Repo,
+		weather: deps.Weather,
+		email:   deps.Email,
+		sms:     deps.SMS,
+	}
 	registry := svc.createRegistry()
 	svc.executor = engine.NewExecutor(registry)
 	return svc
@@ -61,7 +85,8 @@ func (s *Service) createRegistry() *engine.Registry {
 	registry.Register(handlers.NewFormHandler())
 	registry.Register(handlers.NewWeatherHandler(s.getTemperature))
 	registry.Register(handlers.NewConditionHandler())
-	registry.Register(handlers.NewEmailHandler())
+	registry.Register(handlers.NewEmailHandler(s.sendEmail))
+	registry.Register(handlers.NewSMSHandler(s.sendSMS))
 	return registry
 }
 
@@ -94,4 +119,18 @@ func (s *Service) getTemperature(ctx context.Context, city string) (float64, err
 	}
 
 	return s.weather.GetCurrentTemperature(ctx, coords.Lat, coords.Lon)
+}
+
+func (s *Service) sendEmail(ctx context.Context, to, subject, body string) error {
+	if s.email == nil {
+		return fmt.Errorf("no email client configured")
+	}
+	return s.email.Send(ctx, to, subject, body)
+}
+
+func (s *Service) sendSMS(ctx context.Context, phone, message string) error {
+	if s.sms == nil {
+		return fmt.Errorf("no SMS client configured")
+	}
+	return s.sms.Send(ctx, phone, message)
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -231,13 +233,27 @@ func TestConditionHandler(t *testing.T) {
 }
 
 func TestEmailHandler(t *testing.T) {
-	handler := NewEmailHandler()
+	// Mock email function that always succeeds
+	mockEmailFn := func(ctx context.Context, to, subject, body string) error {
+		return nil
+	}
+
+	handler := NewEmailHandler(mockEmailFn)
 
 	if handler.NodeType() != "email" {
 		t.Errorf("expected node type 'email', got %q", handler.NodeType())
 	}
 
 	t.Run("sends email to user from form data", func(t *testing.T) {
+		var sentTo, sentSubject, sentBody string
+		trackingEmailFn := func(ctx context.Context, to, subject, body string) error {
+			sentTo = to
+			sentSubject = subject
+			sentBody = body
+			return nil
+		}
+		h := NewEmailHandler(trackingEmailFn)
+
 		metadata, _ := json.Marshal(map[string]interface{}{
 			"subject": "Weather Alert",
 		})
@@ -254,7 +270,7 @@ func TestEmailHandler(t *testing.T) {
 		ec.Set("form.city", "Sydney")
 		ec.Set("weather.temperature", 30.0)
 
-		step, err := handler.Execute(ec, node)
+		step, err := h.Execute(ec, node)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -263,19 +279,24 @@ func TestEmailHandler(t *testing.T) {
 			t.Errorf("expected step type 'email', got %q", step.NodeType)
 		}
 
+		// Verify email was sent with correct parameters
+		if sentTo != "alice@example.com" {
+			t.Errorf("expected email to 'alice@example.com', got %q", sentTo)
+		}
+		if sentSubject != "Weather Alert" {
+			t.Errorf("expected subject 'Weather Alert', got %q", sentSubject)
+		}
+		expectedBody := "Hi Alice, weather alert for Sydney! Temperature is 30.0°C!"
+		if sentBody != expectedBody {
+			t.Errorf("expected body %q, got %q", expectedBody, sentBody)
+		}
+
 		emailContent, ok := step.Output["emailContent"].(map[string]interface{})
 		if !ok {
 			t.Fatal("expected emailContent in output")
 		}
 		if emailContent["to"] != "alice@example.com" {
 			t.Errorf("expected email to 'alice@example.com', got %v", emailContent["to"])
-		}
-		if emailContent["subject"] != "Weather Alert" {
-			t.Errorf("expected subject 'Weather Alert', got %v", emailContent["subject"])
-		}
-		expectedBody := "Hi Alice, weather alert for Sydney! Temperature is 30.0°C!"
-		if emailContent["body"] != expectedBody {
-			t.Errorf("expected body %q, got %v", expectedBody, emailContent["body"])
 		}
 	})
 
@@ -332,6 +353,192 @@ func TestEmailHandler(t *testing.T) {
 		_, err := handler.Execute(ec, node)
 		if err == nil {
 			t.Error("expected error when metadata is invalid JSON")
+		}
+	})
+
+	t.Run("email client error propagates", func(t *testing.T) {
+		failingEmailFn := func(ctx context.Context, to, subject, body string) error {
+			return fmt.Errorf("SMTP connection failed")
+		}
+		h := NewEmailHandler(failingEmailFn)
+
+		node := &engine.Node{ID: "email-1", Type: "email"}
+
+		ec := engine.NewExecutionContext(context.Background())
+		ec.StepNumber = 5
+		ec.Set("form.name", "Alice")
+		ec.Set("form.email", "alice@example.com")
+		ec.Set("form.city", "Sydney")
+		ec.Set("weather.temperature", 30.0)
+
+		_, err := h.Execute(ec, node)
+		if err == nil {
+			t.Error("expected error when email client fails")
+		}
+		if !strings.Contains(err.Error(), "SMTP connection failed") {
+			t.Errorf("expected error to contain 'SMTP connection failed', got %v", err)
+		}
+	})
+}
+
+func TestSMSHandler(t *testing.T) {
+	// Mock SMS function that always succeeds
+	mockSMSFn := func(ctx context.Context, phone, message string) error {
+		return nil
+	}
+
+	handler := NewSMSHandler(mockSMSFn)
+
+	if handler.NodeType() != "sms" {
+		t.Errorf("expected node type 'sms', got %q", handler.NodeType())
+	}
+
+	t.Run("sends SMS to user from form data", func(t *testing.T) {
+		var sentPhone, sentMessage string
+		trackingSMSFn := func(ctx context.Context, phone, message string) error {
+			sentPhone = phone
+			sentMessage = message
+			return nil
+		}
+		h := NewSMSHandler(trackingSMSFn)
+
+		node := &engine.Node{ID: "sms-1", Type: "sms"}
+
+		ec := engine.NewExecutionContext(context.Background())
+		ec.StepNumber = 5
+		ec.Set("form.name", "Alice")
+		ec.Set("form.phone", "+61412345678")
+		ec.Set("form.city", "Sydney")
+		ec.Set("weather.temperature", 30.0)
+
+		step, err := h.Execute(ec, node)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if step.NodeType != "sms" {
+			t.Errorf("expected step type 'sms', got %q", step.NodeType)
+		}
+
+		// Verify SMS was sent with correct parameters
+		if sentPhone != "+61412345678" {
+			t.Errorf("expected phone '+61412345678', got %q", sentPhone)
+		}
+		expectedMessage := "Hi Alice, weather alert for Sydney! Temperature is 30.0°C!"
+		if sentMessage != expectedMessage {
+			t.Errorf("expected message %q, got %q", expectedMessage, sentMessage)
+		}
+
+		smsContent, ok := step.Output["smsContent"].(map[string]interface{})
+		if !ok {
+			t.Fatal("expected smsContent in output")
+		}
+		if smsContent["to"] != "+61412345678" {
+			t.Errorf("expected phone '+61412345678', got %v", smsContent["to"])
+		}
+	})
+
+	t.Run("uses template from metadata", func(t *testing.T) {
+		var sentMessage string
+		trackingSMSFn := func(ctx context.Context, phone, message string) error {
+			sentMessage = message
+			return nil
+		}
+		h := NewSMSHandler(trackingSMSFn)
+
+		metadata, _ := json.Marshal(map[string]interface{}{
+			"template": "Custom message for testing",
+		})
+		node := &engine.Node{
+			ID:       "sms-1",
+			Type:     "sms",
+			Metadata: metadata,
+		}
+
+		ec := engine.NewExecutionContext(context.Background())
+		ec.StepNumber = 5
+		ec.Set("form.phone", "+61412345678")
+
+		_, err := h.Execute(ec, node)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+
+		if sentMessage != "Custom message for testing" {
+			t.Errorf("expected custom message, got %q", sentMessage)
+		}
+	})
+
+	t.Run("missing phone in form data", func(t *testing.T) {
+		node := &engine.Node{ID: "sms-1", Type: "sms"}
+
+		ec := engine.NewExecutionContext(context.Background())
+		ec.StepNumber = 5
+		ec.Set("form.name", "Alice")
+		// No phone set
+
+		_, err := handler.Execute(ec, node)
+		if err == nil {
+			t.Error("expected error when phone is missing")
+		}
+	})
+
+	t.Run("invalid metadata returns error", func(t *testing.T) {
+		node := &engine.Node{
+			ID:       "sms-1",
+			Type:     "sms",
+			Metadata: []byte(`{invalid json`),
+		}
+
+		ec := engine.NewExecutionContext(context.Background())
+		ec.StepNumber = 5
+		ec.Set("form.phone", "+61412345678")
+
+		_, err := handler.Execute(ec, node)
+		if err == nil {
+			t.Error("expected error when metadata is invalid JSON")
+		}
+	})
+
+	t.Run("SMS client not configured", func(t *testing.T) {
+		h := NewSMSHandler(nil)
+
+		node := &engine.Node{ID: "sms-1", Type: "sms"}
+
+		ec := engine.NewExecutionContext(context.Background())
+		ec.StepNumber = 5
+		ec.Set("form.phone", "+61412345678")
+
+		_, err := h.Execute(ec, node)
+		if err == nil {
+			t.Error("expected error when SMS client not configured")
+		}
+		if !strings.Contains(err.Error(), "SMS client not configured") {
+			t.Errorf("expected error to contain 'SMS client not configured', got %v", err)
+		}
+	})
+
+	t.Run("SMS client error propagates", func(t *testing.T) {
+		failingSMSFn := func(ctx context.Context, phone, message string) error {
+			return fmt.Errorf("Twilio API error")
+		}
+		h := NewSMSHandler(failingSMSFn)
+
+		node := &engine.Node{ID: "sms-1", Type: "sms"}
+
+		ec := engine.NewExecutionContext(context.Background())
+		ec.StepNumber = 5
+		ec.Set("form.name", "Alice")
+		ec.Set("form.phone", "+61412345678")
+		ec.Set("form.city", "Sydney")
+		ec.Set("weather.temperature", 30.0)
+
+		_, err := h.Execute(ec, node)
+		if err == nil {
+			t.Error("expected error when SMS client fails")
+		}
+		if !strings.Contains(err.Error(), "Twilio API error") {
+			t.Errorf("expected error to contain 'Twilio API error', got %v", err)
 		}
 	})
 }

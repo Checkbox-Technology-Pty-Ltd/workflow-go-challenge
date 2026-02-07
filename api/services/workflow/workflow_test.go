@@ -9,6 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"workflow-code-test/api/pkg/email"
+	"workflow-code-test/api/pkg/sms"
+
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/jackc/pgx/v5"
@@ -360,7 +363,12 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 			return nil
 		}
 
-		svc := NewServiceWithDeps(mockRepo, &MockWeatherClient{temp: 30.0})
+		svc := NewServiceWithDeps(ServiceDeps{
+			Repo:    mockRepo,
+			Weather: &MockWeatherClient{temp: 30.0},
+			Email:   email.NewMockClient(),
+			SMS:     sms.NewMockClient(),
+		})
 
 		req := httptest.NewRequest(http.MethodPost, "/workflows/"+validID.String()+"/execute", strings.NewReader(validRequestBody))
 		req.Header.Set("Content-Type", "application/json")
@@ -399,7 +407,12 @@ func TestHandleExecuteWorkflow(t *testing.T) {
 			mockRepo := &MockRepository{}
 			tt.mockSetup(mockRepo)
 
-			svc := NewServiceWithDeps(mockRepo, &MockWeatherClient{temp: 30.0})
+			svc := NewServiceWithDeps(ServiceDeps{
+				Repo:    mockRepo,
+				Weather: &MockWeatherClient{temp: 30.0},
+				Email:   email.NewMockClient(),
+				SMS:     sms.NewMockClient(),
+			})
 
 			req := httptest.NewRequest(http.MethodPost, "/workflows/"+tt.workflowID+"/execute", strings.NewReader(tt.requestBody))
 			req.Header.Set("Content-Type", "application/json")
@@ -508,7 +521,9 @@ func TestHandleGetExecutions(t *testing.T) {
 			mockRepo := &MockRepository{}
 			tt.mockSetup(mockRepo)
 
-			svc := NewServiceWithDeps(mockRepo, nil)
+			svc := NewServiceWithDeps(ServiceDeps{
+				Repo: mockRepo,
+			})
 
 			req := httptest.NewRequest(http.MethodGet, "/workflows/"+tt.workflowID+"/executions", nil)
 			req = mux.SetURLVars(req, map[string]string{"id": tt.workflowID})

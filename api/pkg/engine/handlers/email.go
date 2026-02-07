@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -8,14 +9,19 @@ import (
 	"workflow-code-test/api/pkg/engine"
 )
 
+// EmailFunc is a function type for sending emails
+type EmailFunc func(ctx context.Context, to, subject, body string) error
+
 // EmailHandler handles email nodes.
 // It reads recipient from form data, subject from metadata,
 // and builds a body using user data and temperature.
-type EmailHandler struct{}
+type EmailHandler struct {
+	emailFn EmailFunc
+}
 
-// NewEmailHandler creates a new EmailHandler
-func NewEmailHandler() *EmailHandler {
-	return &EmailHandler{}
+// NewEmailHandler creates a new EmailHandler with the given email function
+func NewEmailHandler(emailFn EmailFunc) *EmailHandler {
+	return &EmailHandler{emailFn: emailFn}
 }
 
 func (h *EmailHandler) NodeType() string { return "email" }
@@ -50,6 +56,13 @@ func (h *EmailHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (
 	temperature := ec.GetFloat("weather.temperature")
 
 	body := fmt.Sprintf("Hi %s, weather alert for %s! Temperature is %.1f°C!", name, city, temperature)
+
+	// Send the email via injected client
+	if h.emailFn != nil {
+		if err := h.emailFn(ec.Ctx, to, metadata.Subject, body); err != nil {
+			return engine.ExecutionStep{}, fmt.Errorf("failed to send email: %w", err)
+		}
+	}
 
 	timestamp := time.Now().Format(time.RFC3339)
 	duration := time.Since(startTime).Milliseconds()
