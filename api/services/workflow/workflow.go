@@ -165,10 +165,15 @@ func (s *Service) HandleExecuteWorkflow(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Build engine graph from workflow nodes/edges
-	graph := buildEngineGraph(nodes, edges)
+	graph, err := buildEngineGraph(nodes, edges)
+	if err != nil {
+		slog.Error("failed to build workflow graph", "error", err)
+		http.Error(w, "invalid workflow structure: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	if err := graph.Validate(); err != nil {
 		slog.Error("invalid workflow structure", "error", err)
-		http.Error(w, "invalid workflow structure", http.StatusBadRequest)
+		http.Error(w, "invalid workflow structure: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -302,11 +307,15 @@ func (s *Service) HandleGetExecutions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// buildEngineGraph converts workflow nodes/edges to an engine.Graph
-func buildEngineGraph(nodes []Node, edges []Edge) *engine.Graph {
+// buildEngineGraph converts workflow nodes/edges to an engine.Graph.
+// Returns an error if edges reference non-existent nodes.
+func buildEngineGraph(nodes []Node, edges []Edge) (*engine.Graph, error) {
 	graph := engine.NewGraph()
 
+	// Build set of valid node IDs
+	nodeIDs := make(map[string]bool, len(nodes))
 	for _, n := range nodes {
+		nodeIDs[n.NodeID] = true
 		graph.AddNode(&engine.Node{
 			ID:       n.NodeID,
 			Type:     n.NodeType,
@@ -314,7 +323,15 @@ func buildEngineGraph(nodes []Node, edges []Edge) *engine.Graph {
 		})
 	}
 
+	// Validate and add edges
 	for _, e := range edges {
+		if !nodeIDs[e.SourceID] {
+			return nil, fmt.Errorf("edge references non-existent source node: %s", e.SourceID)
+		}
+		if !nodeIDs[e.TargetID] {
+			return nil, fmt.Errorf("edge references non-existent target node: %s", e.TargetID)
+		}
+
 		sourceHandle := ""
 		if e.SourceHandle != nil {
 			sourceHandle = *e.SourceHandle
@@ -326,7 +343,7 @@ func buildEngineGraph(nodes []Node, edges []Edge) *engine.Graph {
 		})
 	}
 
-	return graph
+	return graph, nil
 }
 
 // convertEngineSteps converts engine.ExecutionStep to workflow.ExecutionStep for HTTP response

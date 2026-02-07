@@ -27,6 +27,6 @@ func (h *StartHandler) Execute(ec *engine.ExecutionContext, node *engine.Node) (
 		Status:     "completed",
 		Duration:   duration,
 		Output:     map[string]interface{}{"message": "Workflow started"},
-		Timestamp:  ec.StartTime.Format(time.RFC3339),
+		Timestamp:  startTime.Format(time.RFC3339),
 	}, nil
 }
