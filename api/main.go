@@ -13,6 +13,8 @@ import (
 	"github.com/gorilla/mux"
 
 	"workflow-code-test/api/pkg/clients/email"
+	"workflow-code-test/api/pkg/clients/flood"
+	"workflow-code-test/api/pkg/clients/sms"
 	"workflow-code-test/api/pkg/clients/weather"
 	"workflow-code-test/api/pkg/db"
 	"workflow-code-test/api/services/nodes"
@@ -53,7 +55,14 @@ func main() {
 
 	weatherClient := weather.NewOpenMeteoClient(nil)
 	emailClient := email.NewStubClient("weather-alerts@example.com")
-	deps := nodes.Deps{Weather: weatherClient, Email: emailClient}
+	smsClient := sms.NewStubClient()
+	floodClient := flood.NewOpenMeteoClient(nil)
+	deps := nodes.Deps{
+		Weather: weatherClient,
+		Email:   emailClient,
+		SMS:     smsClient,
+		Flood:   floodClient,
+	}
 
 	workflowService, err := workflow.NewService(pgStore, deps)
 	if err != nil {
