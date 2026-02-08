@@ -156,6 +156,13 @@ func (r *pgStorage) GetWorkflow(ctx context.Context, id uuid.UUID) (*Workflow, e
 	return wf, tx.Commit(timeoutCtx)
 }
 
+// UpsertWorkflow inserts a new workflow or updates an existing one.
+// If a workflow with the given ID already exists, its name and modified_at timestamp
+// will be updated, and its deleted_at will be set to NULL (effectively undeleting it).
+// All associated node instances and edges for the workflow ID are first deleted
+// and then re-inserted based on the provided Workflow object. This ensures data consistency
+// when updating a workflow's structure.
+// The operation is wrapped in a transaction to maintain atomicity.
 func (r *pgStorage) UpsertWorkflow(ctx context.Context, wf *Workflow) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second) // Increased timeout for multiple operations
 	defer cancel()
@@ -261,6 +268,12 @@ func (r *pgStorage) UpsertWorkflow(ctx context.Context, wf *Workflow) error {
 	return tx.Commit(timeoutCtx)
 }
 
+// DeleteWorkflow performs a soft delete on the main workflow entry by setting
+// its `deleted_at` timestamp. It also hard deletes all associated
+// `workflow_node_instances` and `workflow_edges` for the given workflow ID.
+// The operation is wrapped in a transaction.
+// If the workflow is not found (i.e., no rows are affected by the soft delete),
+// it returns `pgx.ErrNoRows`.
 func (r *pgStorage) DeleteWorkflow(ctx context.Context, id uuid.UUID) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
