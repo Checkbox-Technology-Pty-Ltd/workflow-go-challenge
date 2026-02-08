@@ -29,6 +29,7 @@ type pgStorage struct {
 type Storage interface {
 	GetWorkflow(ctx context.Context, id uuid.UUID) (*Workflow, error)
 	UpsertWorkflow(ctx context.Context, wf *Workflow) error
+	DeleteWorkflow(ctx context.Context, id uuid.UUID) error
 }
 
 // NewInstance creates a new PostgreSQL-backed Storage implementation.
@@ -259,3 +260,51 @@ func (r *pgStorage) UpsertWorkflow(ctx context.Context, wf *Workflow) error {
 
 	return tx.Commit(timeoutCtx)
 }
+
+func (r *pgStorage) DeleteWorkflow(ctx context.Context, id uuid.UUID) error {
+	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	tx, err := r.db.BeginTx(timeoutCtx, pgx.TxOptions{
+		IsoLevel: pgx.ReadCommitted,
+	})
+	if err != nil {
+		return fmt.Errorf("begin transaction for delete: %w", err)
+	}
+	defer tx.Rollback(timeoutCtx)
+
+	// 1. Hard delete workflow_edges for this workflow
+	_, err = tx.Exec(timeoutCtx, `
+        DELETE FROM workflow_edges
+        WHERE workflow_id = $1;`,
+		id)
+	if err != nil {
+		return fmt.Errorf("delete workflow edges: %w", err)
+	}
+
+	// 2. Hard delete workflow_node_instances for this workflow
+	_, err = tx.Exec(timeoutCtx, `
+        DELETE FROM workflow_node_instances
+        WHERE workflow_id = $1;`,
+		id)
+	if err != nil {
+		return fmt.Errorf("delete workflow node instances: %w", err)
+	}
+
+	// 3. Soft delete the main workflow entry
+	result, err := tx.Exec(timeoutCtx, `
+        UPDATE workflows
+        SET deleted_at = $1, modified_at = $1
+        WHERE id = $2;`,
+		time.Now(), id)
+	if err != nil {
+		return fmt.Errorf("soft delete workflow header: %w", err)
+	}
+
+	if result.RowsAffected() == 0 {
+		return pgx.ErrNoRows // Indicate workflow not found
+	}
+
+	return tx.Commit(timeoutCtx)
+}
+

@@ -32,6 +32,10 @@ func (m *mockStorage) UpsertWorkflow(_ context.Context, _ *storage.Workflow) err
 	return m.err // Or nil if no error is expected by default
 }
 
+func (m *mockStorage) DeleteWorkflow(_ context.Context, _ uuid.UUID) error {
+	return m.err // Or nil if no error is expected by default
+}
+
 // newTestRouter wires up the service with mux routing so handler tests
 // can exercise the full request path including URL parameter extraction.
 func newTestRouter(svc *Service) *mux.Router {

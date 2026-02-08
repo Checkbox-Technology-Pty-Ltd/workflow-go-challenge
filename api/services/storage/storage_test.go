@@ -443,3 +443,117 @@ func TestUpsertWorkflow(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteWorkflow(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		id        uuid.UUID
+		setupMock func(mock pgxmock.PgxPoolIface, id uuid.UUID)
+		wantErr   error
+	}{
+		{
+			name: "soft delete existing workflow successfully",
+			id:   testWfID,
+			setupMock: func(mock pgxmock.PgxPoolIface, id uuid.UUID) {
+				mock.ExpectBeginTx(pgx.TxOptions{
+					IsoLevel: pgx.ReadCommitted,
+				})
+
+				// Expect hard delete of edges
+				mock.ExpectExec(`DELETE FROM workflow_edges`).
+					WithArgs(id).
+					WillReturnResult(pgxmock.NewResult("DELETE", 5))
+
+				// Expect hard delete of node instances
+				mock.ExpectExec(`DELETE FROM workflow_node_instances`).
+					WithArgs(id).
+					WillReturnResult(pgxmock.NewResult("DELETE", 3))
+
+				// Expect soft delete of workflow header
+				mock.ExpectExec(`UPDATE workflows`).
+					WithArgs(pgxmock.AnyArg(), id).
+					WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+
+				mock.ExpectCommit()
+			},
+			wantErr: nil,
+		},
+		{
+			name: "returns error if workflow not found",
+			id:   uuid.New(), // Use a new ID not in our testWfID
+			setupMock: func(mock pgxmock.PgxPoolIface, id uuid.UUID) {
+				mock.ExpectBeginTx(pgx.TxOptions{
+					IsoLevel: pgx.ReadCommitted,
+				})
+
+				// Edges and nodes might be deleted (or not exist)
+				mock.ExpectExec(`DELETE FROM workflow_edges`).
+					WithArgs(id).
+					WillReturnResult(pgxmock.NewResult("DELETE", 0))
+				mock.ExpectExec(`DELETE FROM workflow_node_instances`).
+					WithArgs(id).
+					WillReturnResult(pgxmock.NewResult("DELETE", 0))
+
+				// Expect soft delete of workflow header, but no rows affected
+				mock.ExpectExec(`UPDATE workflows`).
+					WithArgs(pgxmock.AnyArg(), id).
+					WillReturnResult(pgxmock.NewResult("UPDATE", 0))
+
+				mock.ExpectRollback() // Expect rollback due to RowsAffected == 0 resulting in error
+			},
+			wantErr: pgx.ErrNoRows,
+		},
+		{
+			name: "returns error on database failure during child deletion",
+			id:   testWfID,
+			setupMock: func(mock pgxmock.PgxPoolIface, id uuid.UUID) {
+				mock.ExpectBeginTx(pgx.TxOptions{
+					IsoLevel: pgx.ReadCommitted,
+				})
+
+				// Expect delete edges to fail
+				mock.ExpectExec(`DELETE FROM workflow_edges`).
+					WithArgs(id).
+					WillReturnError(errors.New("db connection lost"))
+
+				mock.ExpectRollback() // Expect rollback due to error
+			},
+			wantErr: errors.New("delete workflow edges: db connection lost"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mock, err := pgxmock.NewPool()
+			if err != nil {
+				t.Fatalf("failed to create mock pool: %v", err)
+			}
+			defer mock.Close()
+
+			tt.setupMock(mock, tt.id)
+
+			store := &pgStorage{db: mock}
+			err = store.DeleteWorkflow(context.Background(), tt.id)
+
+			if tt.wantErr != nil {
+				if err == nil {
+					t.Fatal("expected error, got nil")
+				}
+				if err.Error() != tt.wantErr.Error() {
+					t.Errorf("expected error %q, got %q", tt.wantErr, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("unmet mock expectations: %v", err)
+			}
+		})
+	}
+}
