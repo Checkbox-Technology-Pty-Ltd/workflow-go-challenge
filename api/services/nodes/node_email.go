@@ -50,9 +50,13 @@ func (n *EmailNode) ToJSON() NodeJSON {
 // Execute resolves template placeholders from context variables and
 // sends the email via the client. Returns the composed email as output.
 func (n *EmailNode) Execute(ctx context.Context, nCtx *NodeContext) (*ExecutionResult, error) {
+	to, ok := nCtx.Variables["email"].(string)
+	if !ok || to == "" {
+		return nil, fmt.Errorf("missing or invalid variable: email")
+	}
+
 	subject := resolveTemplate(n.EmailTemplate.Subject, nCtx.Variables)
 	body := resolveTemplate(n.EmailTemplate.Body, nCtx.Variables)
-	to, _ := nCtx.Variables["email"].(string)
 
 	msg := email.Message{
 		To:      to,

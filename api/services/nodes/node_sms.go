@@ -40,7 +40,11 @@ func (n *SmsNode) ToJSON() NodeJSON {
 }
 
 func (n *SmsNode) Execute(ctx context.Context, nCtx *NodeContext) (*ExecutionResult, error) {
-	phone, _ := nCtx.Variables["phone"].(string)
+	phone, ok := nCtx.Variables["phone"].(string)
+	if !ok || phone == "" {
+		return nil, fmt.Errorf("missing or invalid variable: phone")
+	}
+
 	message, _ := nCtx.Variables["message"].(string)
 
 	result, err := n.sms.Send(ctx, sms.Message{
