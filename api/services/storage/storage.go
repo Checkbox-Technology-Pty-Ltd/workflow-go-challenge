@@ -156,13 +156,13 @@ func (r *pgStorage) GetWorkflow(ctx context.Context, id uuid.UUID) (*Workflow, e
 	return wf, tx.Commit(timeoutCtx)
 }
 
-// UpsertWorkflow inserts a new workflow or updates an existing one.
-// If a workflow with the given ID already exists, its name and modified_at timestamp
-// will be updated, and its deleted_at will be set to NULL (effectively undeleting it).
-// All associated node instances and edges for the workflow ID are first deleted
-// and then re-inserted based on the provided Workflow object. This ensures data consistency
-// when updating a workflow's structure.
-// The operation is wrapped in a transaction to maintain atomicity.
+// UpsertWorkflow saves a workflow in a single READ COMMITTED transaction:
+//  1. Upserts the workflow header (INSERT … ON CONFLICT DO UPDATE), clearing deleted_at on re-save
+//  2. Deletes then re-inserts all workflow_node_instances (maps node types to node_library IDs)
+//  3. Deletes then re-inserts all workflow_edges with their visual properties
+//
+// The delete-and-reinsert strategy keeps the write path simple at the cost of
+// replacing every child row on each save.
 func (r *pgStorage) UpsertWorkflow(ctx context.Context, wf *Workflow) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second) // Increased timeout for multiple operations
 	defer cancel()
@@ -268,12 +268,12 @@ func (r *pgStorage) UpsertWorkflow(ctx context.Context, wf *Workflow) error {
 	return tx.Commit(timeoutCtx)
 }
 
-// DeleteWorkflow performs a soft delete on the main workflow entry by setting
-// its `deleted_at` timestamp. It also hard deletes all associated
-// `workflow_node_instances` and `workflow_edges` for the given workflow ID.
-// The operation is wrapped in a transaction.
-// If the workflow is not found (i.e., no rows are affected by the soft delete),
-// it returns `pgx.ErrNoRows`.
+// DeleteWorkflow removes a workflow in a single READ COMMITTED transaction:
+//  1. Hard-deletes all workflow_edges for the workflow
+//  2. Hard-deletes all workflow_node_instances for the workflow
+//  3. Soft-deletes the workflow header (sets deleted_at and modified_at)
+//
+// Returns pgx.ErrNoRows if the workflow does not exist.
 func (r *pgStorage) DeleteWorkflow(ctx context.Context, id uuid.UUID) error {
 	timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

@@ -213,9 +213,14 @@ All tests run in parallel (`t.Parallel()`) and use table-driven patterns. Storag
 ### Known Limitations
 
 - **No execution persistence** — Execution results are returned in the HTTP response but not stored. A production system would persist runs for audit and replay.
-- **No DAG validation at save time** — Cycles are caught before execution via DFS, but ideally would also be rejected when the workflow is saved (there is no save endpoint).
+- **No DAG validation at save time** — Cycles are caught before execution via DFS, but ideally would also be rejected when the workflow is saved.
 - **Global library mutation** — Changing a library node affects all workflows. A versioning or copy-on-write mechanism would prevent unintended side effects.
-- **Single workflow query** — The storage layer only supports `GetWorkflow`. There's no list, create, update, or delete endpoint.
+- **Save and delete are persistence-layer only (HTTP handlers out of scope)** — `UpsertWorkflow` and `DeleteWorkflow` are fully implemented and tested at the storage layer, but no HTTP endpoints expose them yet. The handlers were out of scope for this submission; the storage layer was prioritised because the three-tier data model makes persistence the complex part of these operations.
+
+  - **`UpsertWorkflow`** — Single `READ COMMITTED` transaction that upserts the workflow header (`INSERT … ON CONFLICT DO UPDATE`, clearing `deleted_at` on re-save), then deletes and re-inserts all node instances (mapping node types to `node_library` IDs) and edges.
+  - **`DeleteWorkflow`** — Single `READ COMMITTED` transaction that hard-deletes all edges and node instances, then soft-deletes the workflow header (`deleted_at` + `modified_at`). Returns `pgx.ErrNoRows` if the workflow does not exist.
+
+  Both follow the same transactional pattern as `GetWorkflow` and would need only thin HTTP handlers to be exposed as `PUT /{id}` and `DELETE /{id}`.
 - **No client-level tests** — The `pkg/clients/` packages (weather, flood) make real HTTP calls with no `httptest.Server` mocks. Node tests cover the integration boundary but the clients themselves are untested in isolation.
 
 ## Future Considerations
