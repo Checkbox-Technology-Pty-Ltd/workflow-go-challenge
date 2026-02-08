@@ -2,11 +2,15 @@
 
 A modern workflow editor app for designing and executing custom automation workflows (e.g., weather notifications). Users can visually build workflows, configure parameters, and view real-time execution results.
 
+## Scope
+
+All implementation work is in the **backend (`api/`)** and **infrastructure (`docker-compose.yml`, Flyway migrations)**. The frontend (`web/`) was not modified — the provided React Flow editor already handles rendering and interaction for the node types and edge shapes the backend serves, so no frontend changes were needed.
+
 ## 🛠️ Tech Stack
 
-- **Frontend:** React + TypeScript, @xyflow/react (drag-and-drop), Radix UI, Tailwind CSS, Vite
+- **Frontend:** React + TypeScript, @xyflow/react (drag-and-drop), Radix UI, Tailwind CSS, Vite (provided, unchanged)
 - **Backend:** Go API, PostgreSQL database
-- **DevOps:** Docker Compose for orchestration, hot reloading for rapid development
+- **DevOps:** Docker Compose for orchestration, Flyway for automated migrations, hot reloading for rapid development
 
 ## 🚀 Quick Start
 
@@ -66,6 +70,18 @@ docker-compose up --build
   ```bash
   docker-compose restart api
   ```
+
+## Design Approach
+
+The core problem is: build a workflow engine that's extensible (new node types without changing existing code), safe (bounded execution, no infinite loops), and honest about what it doesn't do.
+
+**Shared Library Model** — Node definitions live in a global `node_library` table; workflows reference them via instances. I chose this over embedding definitions directly in workflows because centralised updates (e.g., changing an API endpoint) should propagate everywhere. The downside is mutation side-effects — changing a library node silently alters every workflow that uses it. A production system would need versioning or copy-on-write to prevent this, but the current schema supports the upgrade path without migration.
+
+**Interface-Driven Extensibility** — Every external dependency (weather, email, SMS, flood) is behind an interface. This isn't just for testing — it's the primary extension mechanism. After building the initial weather workflow, I added SMS and flood nodes to prove the architecture actually extends. Each required exactly four touch points: client interface + implementation, node implementation, factory case, and a DB migration seed. Zero changes to existing code. The extensibility is demonstrated, not just claimed.
+
+**Fail Before You Waste** — The engine runs a three-colour DFS to validate the graph is a DAG before executing any node. This is deliberate: an API call to Open-Meteo is irreversible (it has side-effects like rate limit consumption), and an email send is literally irreversible. Catching cycles upfront avoids wasting API calls and sending partial notifications on a graph that can never terminate. The step limit (100) is a backstop, not the primary safeguard.
+
+**Business Errors Are Not Server Errors** — Node failures return HTTP 200 with `status: "failed"` and partial results, not 500. A weather API returning bad data is a business outcome — the engine ran correctly, a node within the workflow produced an error. This lets clients inspect completed steps for debugging and avoids conflating "the server crashed" with "the user submitted an invalid city name." That said, 422 would also be defensible for input validation failures.
 
 ## Architecture
 
@@ -182,24 +198,30 @@ api/
         └── engine_test.go           # Engine unit tests
 ```
 
-## Running Tests
+## Testing Strategy
 
 ```bash
 cd api && go test ./... -v
 ```
 
-Tests cover three packages across four test files:
+Tests cover three packages across 11 test files:
 
-| Package | File | What's tested |
+| Package | Files | What's tested |
 | :--- | :--- | :--- |
-| `services/nodes` | `node_test.go` | All node Execute() paths, factory, type conversion |
-| `services/storage` | `storage_test.go` | GetWorkflow queries with pgxmock (success, not-found, scan errors) |
+| `services/nodes` | `node_test.go` + 7 per-type test files | Factory, ToJSON (all 8 node types), Execute paths for every node type |
+| `services/storage` | `storage_test.go` | GetWorkflow, UpsertWorkflow, DeleteWorkflow queries with pgxmock |
 | `services/workflow` | `engine_test.go` | DAG validation, execution flow, branching, cancellation, partial failure |
 | `services/workflow` | `workflow_test.go` | HTTP handlers (GET, POST, 404, 400, 500) |
 
-All tests run in parallel (`t.Parallel()`) and use table-driven patterns. Storage tests use `pgxmock` to avoid requiring a running database.
+**Why table-driven**: Every test function uses the `[]struct{ name; input; want }` pattern with `t.Run` subtests. This makes it trivial to add new cases (e.g., adding a "custom variable" condition test is one struct literal, not a new function) and produces clear output showing exactly which case failed.
 
-## Trade-offs and Known Issues
+**Why parallel**: All tests call `t.Parallel()` at both the top-level and subtest level. This catches accidental shared state — if two subtests mutate the same variable, the race detector flags it immediately.
+
+**Why pgxmock over testcontainers**: Storage tests mock the database via `pgxmock.PgxPoolIface`. This keeps tests fast and dependency-free (no running Postgres required), at the cost of not catching real query issues. The trade-off is intentional — integration tests against a real database would be the next layer to add, but unit tests with exact query matching catch the most common bugs (wrong column order, missing WHERE clauses).
+
+**Why mock interfaces, not mock frameworks**: Node tests use hand-written mocks (e.g., `mockWeatherClient`) rather than generated mocks. For interfaces with 1-2 methods, a 5-line struct is simpler and more readable than pulling in `gomock` or `mockery`. The mock is right there in the test file.
+
+## Trade-offs and Decisions
 
 | Decision | Benefit | Trade-off |
 | :--- | :--- | :--- |
@@ -209,6 +231,17 @@ All tests run in parallel (`t.Parallel()`) and use table-driven patterns. Storag
 | Stub clients for email/SMS | Demonstrates the interface pattern without external dependencies | No actual delivery; production would need real integrations |
 | Soft deletes (`deleted_at`) | Preserves audit history for execution logs | All read queries must filter `WHERE deleted_at IS NULL` |
 | Sequential node execution | Predictable ordering, straightforward variable passing | Cannot execute independent branches in parallel |
+| Flat variable namespace | Simple — nodes read/write to `map[string]any` | Two nodes writing the same key overwrite each other silently |
+| `REPEATABLE READ` for reads | Consistent snapshot across the 3-query GetWorkflow join | Slightly higher isolation overhead than `READ COMMITTED` |
+| Composite foreign keys on edges | DB-level prevention of cross-workflow edges | More complex schema; requires composite primary keys on instances |
+
+**On synchronous execution**: I chose this deliberately over async (job queue + polling) because the workflows are short-lived (a few API calls) and the request/response model is simpler to reason about and debug. The 60-second total timeout is the natural ceiling. If workflows needed minutes, I'd return a job ID and use WebSockets or polling — but that complexity isn't justified for the current use case.
+
+**On stub clients**: The interfaces are the deliverable, not the implementations. Swapping `sms.NewStubClient()` for a Twilio implementation requires implementing a 1-method interface. The node code doesn't change. I chose stubs over real integrations to keep the submission self-contained and runnable without API keys.
+
+**On the flat variable namespace**: All node outputs merge into a single `map[string]any`. This works for linear workflows where each variable has one producer. For complex DAGs with parallel branches, I'd namespace outputs (e.g., `nodeId.variableName`) or use an immutable context with copy-on-write semantics. The current design is intentionally simple for the workflow shapes this system supports.
+
+**On the "integration" type name**: The weather node maps to `"integration"` in the factory and DB, while SMS and flood use their own named types (`"sms"`, `"flood"`). This is a leftover from the original provided schema — the frontend renders node appearance based on this type string, so renaming it would break the contract. The file is named `node_weather.go` to signal the intent. In a real system, I'd coordinate a rename with a frontend update.
 
 ### Known Limitations
 
@@ -223,12 +256,18 @@ All tests run in parallel (`t.Parallel()`) and use table-driven patterns. Storag
   Both follow the same transactional pattern as `GetWorkflow` and would need only thin HTTP handlers to be exposed as `PUT /{id}` and `DELETE /{id}`.
 - **No client-level tests** — The `pkg/clients/` packages (weather, flood) make real HTTP calls with no `httptest.Server` mocks. Node tests cover the integration boundary but the clients themselves are untested in isolation.
 
-## Future Considerations
+## What I'd Build Next
 
-- **Execution history** — Persist each run with its inputs, steps, and timing data. Enables audit trails and debugging.
-- **Per-node retry with backoff** — Especially for 429 (rate limit) responses from shared API keys. Currently a timeout failure is terminal.
-- **Async execution** — For long-running workflows, return a job ID immediately and poll or use WebSockets for results.
-- **Parallel branch execution** — When independent branches exist in the graph, execute them concurrently with `errgroup`.
-- **Node versioning** — Pin workflows to specific library node versions so updates don't silently change behaviour.
-- **Save-time validation** — Reject invalid graphs (cycles, disconnected nodes, missing edges) at save time rather than execution time.
-- **Workflow and Node Versioning** — Implement versioning for workflows and potentially individual node definitions. This would enable auditing, rollback, and address the "Global library mutation" issue (e.g., via content-addressable storage for node metadata). This is a significant enhancement and out-of-scope for the current submission.
+Ordered by impact, not by ease of implementation:
+
+1. **Execution persistence** — Persist each run with its inputs, steps, and timing data. The `ExecutionResponse` struct is already the right shape for an `execution_runs` table. This is the highest-impact gap because without it there's no audit trail, no replay, and no way to debug failed workflows after the HTTP response is gone.
+
+2. **Observability** — OpenTelemetry spans per node execution (the engine loop is the natural instrumentation point), Prometheus counters for execution counts and latencies, and structured log correlation via the existing request ID middleware. `slog` is already in place; this is plumbing, not architecture.
+
+3. **Save-time DAG validation** — Currently cycles are caught at execution time. Validating at save time (the `UpsertWorkflow` path) would prevent users from saving broken workflows. The `validateDAG` function already exists and is decoupled from execution — it just needs to be called from the save handler.
+
+4. **Client-level tests** — The `pkg/clients/` HTTP clients have zero test coverage. `httptest.Server` mocks would catch timeout handling, error parsing, and malformed response edge cases that the node-level mocks don't exercise.
+
+5. **Node versioning** — Pin workflows to specific library node versions via content-addressable metadata hashing or explicit version columns. This directly addresses the shared library mutation risk. The schema change is straightforward (add a `version` column to `node_library`, reference it from instances), but the migration path for existing data needs care.
+
+6. **Parallel branch execution** — When independent branches exist in the graph (no data dependency), execute them concurrently with `errgroup`. The engine's adjacency list already supports multiple outgoing edges per node; the change is in the execution loop, not the data model.

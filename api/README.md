@@ -225,4 +225,25 @@ api/
 - Schema managed via Flyway migrations in `pkg/db/migration/`
 - Three-tier data model: `node_library` (blueprints) → `workflow_node_instances` (canvas placements) → `workflow_edges` (connections)
 
+### Automated Migrations via Flyway
+
+A dedicated `flyway` service in `docker-compose.yml` runs migrations automatically on startup — no manual SQL or migration commands required. The service:
+
+- Uses the `flyway/flyway:10-alpine` image
+- Mounts `api/pkg/db/migration/` as the SQL source directory (`/flyway/sql`)
+- Waits for Postgres with `-connectRetries=60` (retries for up to 60 seconds)
+- Runs `migrate` then `info` to apply pending migrations and log the final state
+- Uses `-baselineOnMigrate=true -baselineVersion=0` so Flyway can adopt an existing database without failing on the initial run
+
+The migration files follow Flyway's versioned naming convention:
+
+| Migration | Purpose |
+| :--- | :--- |
+| `V1__create_workflow_orchestrator_system.sql` | Schema: tables, indexes, triggers, composite foreign keys |
+| `V2__seed_weather_workflow.sql` | Seed: weather workflow with node library entries, instances, and edges |
+| `V3__add_sms_and_flood_node_types.sql` | Schema + seed: SMS and flood node types in `node_library` |
+| `V4__seed_flood_alert_workflow.sql` | Seed: flood alert workflow with instances and edges |
+
+Adding a new migration is: create `V5__description.sql` in `pkg/db/migration/`, restart the stack. Flyway picks it up automatically and applies it in order.
+
 For architecture details and trade-offs, see the [root README](../README.md#architecture).
